@@ -17,6 +17,19 @@ jobs:
       - name: Descomprimir aplicación
         run: unzip -o Finanzas_Definitiva_Flutter.zip
 
+      - name: Corregir prueba incompatible con const
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('finanzas_definitiva/test/accounting_engine_test.dart')
+          text = path.read_text()
+          old = "const tx=[JournalTransaction(date:DateTime(2026),description:'Venta',lines:[JournalLine(accountId:1,credit:100),JournalLine(accountId:2,debit:40)])]"
+          new = "final tx=[JournalTransaction(date:DateTime(2026),description:'Venta',lines:[JournalLine(accountId:1,credit:100),JournalLine(accountId:2,debit:40)])]"
+          if old not in text:
+              raise SystemExit('Expected test snippet not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Instalar Flutter
         uses: subosito/flutter-action@v2
         with:
