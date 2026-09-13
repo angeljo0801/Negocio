@@ -24,7 +24,12 @@ jobs:
           import re
           path = Path('finanzas_definitiva/test/accounting_engine_test.dart')
           text = path.read_text()
-          updated, count = re.subn(r'\bconst(\s+)tx(\s*=\s*\[\s*)JournalTransaction\(', r'final\1tx\2JournalTransaction(', text, count=1)
+          updated, count = re.subn(
+              r"\bconst(\s+tx\s*=\s*\[\s*JournalTransaction\(\s*date\s*:\s*DateTime\(2026\)\s*,\s*description\s*:\s*'Venta'\s*,\s*lines\s*:\s*\[\s*JournalLine\(accountId\s*:\s*1\s*,\s*credit\s*:\s*100\)\s*,\s*JournalLine\(accountId\s*:\s*2\s*,\s*debit\s*:\s*40\)\s*\]\s*\)\s*\])",
+              r'final\1',
+              text,
+              count=1,
+          )
           if count != 1:
               raise SystemExit('Expected test declaration not found')
           path.write_text(updated)
