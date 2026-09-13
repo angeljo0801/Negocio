@@ -23,7 +23,7 @@ jobs:
           from pathlib import Path
           import re
           path = Path('finanzas_definitiva/test/accounting_engine_test.dart')
-          text = path.read_text()
+          text = path.read_text(encoding='utf-8')
           updated, count = re.subn(
               r"\bconst(\s+tx\s*=\s*\[\s*JournalTransaction\(\s*date\s*:\s*DateTime\(2026\)\s*,\s*description\s*:\s*'Venta'\s*,\s*lines\s*:\s*\[\s*JournalLine\(accountId\s*:\s*1\s*,\s*credit\s*:\s*100\)\s*,\s*JournalLine\(accountId\s*:\s*2\s*,\s*debit\s*:\s*40\)\s*\]\s*\)\s*\])",
               r'final\1',
@@ -32,7 +32,7 @@ jobs:
           )
           if count != 1:
               raise SystemExit('Expected test declaration not found')
-          path.write_text(updated)
+          path.write_text(updated, encoding='utf-8')
           PY
 
       - name: Instalar Flutter
