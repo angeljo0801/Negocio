@@ -1,0 +1,46 @@
+name: Compilar APK Finanzas Definitiva
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Descomprimir aplicación
+        run: unzip -o Finanzas_Definitiva_Flutter.zip
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Crear archivos Android
+        working-directory: finanzas_definitiva
+        run: flutter create . --platforms=android --org com.angel.finanzas
+
+      - name: Descargar dependencias
+        working-directory: finanzas_definitiva
+        run: flutter pub get
+
+      - name: Ejecutar pruebas
+        working-directory: finanzas_definitiva
+        run: flutter test
+
+      - name: Compilar APK
+        working-directory: finanzas_definitiva
+        run: flutter build apk --release
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Finanzas-Definitiva-APK
+          path: finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk
