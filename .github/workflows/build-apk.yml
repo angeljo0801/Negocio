@@ -24,7 +24,7 @@ jobs:
           import re
           path = Path('finanzas_definitiva/test/accounting_engine_test.dart')
           text = path.read_text(encoding='utf-8')
-          pattern = r"\bconst(\s+tx\s*=\s*\[\s*JournalTransaction\(\s*date\s*:\s*DateTime\(2026\)\s*,\s*description\s*:\s*'Venta'\s*,\s*lines\s*:\s*\[\s*JournalLine\(accountId\s*:\s*1\s*,\s*credit\s*:\s*100\)\s*,\s*JournalLine\(accountId\s*:\s*2\s*,\s*debit\s*:\s*40\)\s*\]\s*\)\s*\])"
+          pattern = r"\bconst(\s+[A-Za-z_]\w*\s*=\s*\[\s*JournalTransaction\([\s\S]*?DateTime\([\s\S]*?\]\s*;)"
           updated, count = re.subn(
               pattern,
               r'final\1',
