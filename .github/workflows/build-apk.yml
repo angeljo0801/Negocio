@@ -17,6 +17,25 @@ jobs:
       - name: Descomprimir aplicación
         run: unzip -o Finanzas_Definitiva_Flutter.zip
 
+      - name: Corregir prueba incompatible con const
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('finanzas_definitiva/test/accounting_engine_test.dart')
+          text = path.read_text(encoding='utf-8')
+          pattern = r"\bconst(\s+[A-Za-z_]\w*\s*=\s*\[\s*JournalTransaction\(\s*date\s*:\s*DateTime\([^;]*?\)\]\s*;)"
+          updated, count = re.subn(
+              pattern,
+              r'final\1',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit(f"Expected invalid const JournalTransaction declaration not found in {path}")
+          path.write_text(updated, encoding='utf-8')
+          PY
+
       - name: Instalar Flutter
         uses: subosito/flutter-action@v2
         with:
