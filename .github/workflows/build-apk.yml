@@ -17,7 +17,7 @@ jobs:
       - name: Descomprimir aplicación
         run: |
           cat .github/archive-parts/part-* > Finanzas_Definitiva_Flutter_v3.zip
-          echo "51c0050e383c9bc6d121548c786f7481b2b01192e091aabb2e75037c0c6ae57f  Finanzas_Definitiva_Flutter_v3.zip" | sha256sum --check
+          echo "9473cb9bb4b54fde34b13ebde7884d930880579e4ec709b2f00472b8cb9b17e9  Finanzas_Definitiva_Flutter_v3.zip" | sha256sum --check
           unzip -o Finanzas_Definitiva_Flutter_v3.zip
 
       - name: Instalar Flutter
