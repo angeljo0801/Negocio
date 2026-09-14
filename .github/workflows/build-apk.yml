@@ -30,7 +30,11 @@ jobs:
       - name: Descargar dependencias
         working-directory: finanzas_definitiva
         run: flutter pub get
-
+        
+      - name: Generar icono de la aplicacion
+        working-directory: finanzas_definitiva
+        run: dart run flutter_launcher_icons
+        
       - name: Ejecutar pruebas
         working-directory: finanzas_definitiva
         run: flutter test
