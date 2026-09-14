@@ -17,49 +17,6 @@ jobs:
       - name: Descomprimir aplicación
         run: unzip -o Finanzas_Definitiva_Flutter.zip
 
-      - name: Corregir fuentes incompatibles del archivo comprimido
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          path = Path('finanzas_definitiva/test/accounting_engine_test.dart')
-          text = path.read_text(encoding='utf-8')
-          pattern = r"\bconst(\s+[A-Za-z_]\w*\s*=\s*\[\s*JournalTransaction\(\s*date\s*:\s*DateTime\([^;]*?\)\]\s*;)"
-          updated, count = re.subn(
-              pattern,
-              r'final\1',
-              text,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit(f"Expected invalid const JournalTransaction declaration not found in {path}")
-          path.write_text(updated, encoding='utf-8')
-
-          main_path = Path('finanzas_definitiva/lib/main.dart')
-          lines = main_path.read_text(encoding='utf-8').splitlines()
-          if len(lines) < 31:
-              raise SystemExit(f"Unexpected {main_path} format")
-
-          for line_number in (21, 31):
-              idx = line_number - 1
-              if not lines[idx].endswith('}}'):
-                  raise SystemExit(f"Expected duplicated closing brace on line {line_number} in {main_path}")
-              lines[idx] = lines[idx][:-1]
-
-          tx_line_idx = 24 - 1
-          tx_line = lines[tx_line_idx]
-          if not tx_line.endswith('}}'):
-              raise SystemExit(f"Expected duplicated closing brace on line 24 in {main_path}")
-          tx_line = tx_line[:-1]
-          marker = "label:const Text('Guardar asiento'))]));}"
-          if marker not in tx_line:
-              raise SystemExit(f"Expected malformed transaction form closure not found in {main_path}")
-          tx_line = tx_line.replace(marker, "label:const Text('Guardar asiento')))]));}", 1)
-          lines[tx_line_idx] = tx_line
-
-          main_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-          PY
-
       - name: Instalar Flutter
         uses: subosito/flutter-action@v2
         with:
