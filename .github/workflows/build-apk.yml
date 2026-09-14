@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Descomprimir aplicación
-        run: unzip -o Finanzas_Definitiva_Flutter.zip
+        run: unzip -o Finanzas_Definitiva_Flutter_v3.zip
 
       - name: Instalar Flutter
         uses: subosito/flutter-action@v2
