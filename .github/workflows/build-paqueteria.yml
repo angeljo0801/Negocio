@@ -88,9 +88,26 @@ jobs:
           path: analyze.txt
           retention-days: 7
 
-      - name: Build release APK
+      - name: Build release APK and capture diagnostics
         working-directory: app
-        run: flutter build apk --release
+        run: |
+          set +e
+          flutter build apk --release 2>&1 | tee ../build.txt
+          code=${PIPESTATUS[0]}
+          echo "$code" > ../build.exit
+          exit 0
+
+      - name: Upload build diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: Paqueteria-Build-Diagnostics
+          path: |
+            build.txt
+            build.exit
+          retention-days: 7
+
+      - name: Validate build
+        run: test "$(cat build.exit)" = "0"
 
       - name: Rename APK
         run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.0.apk
