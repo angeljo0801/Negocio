@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path_provider/path_provider.dart';
@@ -16,6 +18,7 @@ part 'packages.dart';
 part 'trips.dart';
 part 'flights.dart';
 part 'extras.dart';
+part 'tracking_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -167,7 +170,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: index, children: pages),
+      body: pages[index],
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
         onDestinationSelected: (v) => setState(() => index = v),
@@ -191,16 +194,22 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   bool loading = true;
+  bool courierSyncing = false;
   List<Map<String, dynamic>> clients = [], purchases = [], packages = [], trips = [], payments = [], watches = [];
   Map<String, dynamic> settings = {};
 
   @override
   void initState() {
     super.initState();
-    load();
+    load(syncCourier: true);
   }
 
-  Future<void> load() async {
+  Future<void> load({bool syncCourier = false}) async {
+    if (syncCourier) {
+      if (mounted) setState(() => courierSyncing = true);
+      await EasyPostService.syncAll();
+      if (mounted) setState(() => courierSyncing = false);
+    }
     final r = await Future.wait([
       Store.list('clients'),
       Store.list('purchases'),
@@ -223,6 +232,11 @@ class _DashboardPageState extends State<DashboardPage> {
     });
   }
 
+  Future<void> openCourier() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const CourierPage()));
+    if (mounted) await load(syncCourier: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -232,18 +246,27 @@ class _DashboardPageState extends State<DashboardPage> {
     final readyLb = received.fold<double>(0, (a, e) => a + number(e['billWeight']));
     final due = clients.fold<double>(0, (a, c) => a + clientDue('${c['id']}', purchases, payments));
     final cheap = watches.where((e) => number(e['lastPrice']) > 0 && number(e['lastPrice']) <= number(e['targetPrice'])).length;
+    final courierErrors = packages.where((e) => '${e['courierError'] ?? ''}'.trim().isNotEmpty).length;
     final tasks = <String>[];
     if (pendingPurchases > 0) tasks.add('Comprar $pendingPurchases pedido(s) pendiente(s).');
     if (inTransit > 0) tasks.add('Revisar $inTransit paquete(s) actualmente en tránsito.');
+    if (courierErrors > 0) tasks.add('$courierErrors paquete(s) necesitan revisar la conexión con el courier.');
     if (due > 0) tasks.add('Hay ${money(due)} pendientes de cobro.');
     if (readyLb > 0) tasks.add('Tienes ${readyLb.toStringAsFixed(1)} lb recibidas listas para organizar en un viaje.');
     if (cheap > 0) tasks.add('Hay $cheap ruta(s) con precio observado por debajo de tu objetivo.');
     if (tasks.isEmpty) tasks.add('No hay pendientes críticos registrados.');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Paquetería'), actions: [IconButton(onPressed: load, icon: const Icon(Icons.refresh))]),
+      appBar: AppBar(title: const Text('Paquetería'), actions: [
+        IconButton(tooltip: 'Conexión courier', onPressed: openCourier, icon: const Icon(Icons.cloud_sync)),
+        IconButton(
+          tooltip: 'Actualizar datos y couriers',
+          onPressed: courierSyncing ? null : () => load(syncCourier: true),
+          icon: courierSyncing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.refresh),
+        ),
+      ]),
       body: RefreshIndicator(
-        onRefresh: load,
+        onRefresh: () => load(syncCourier: true),
         child: ListView(padding: const EdgeInsets.all(12), children: [
           Text('Centro de operaciones', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
@@ -252,7 +275,7 @@ class _DashboardPageState extends State<DashboardPage> {
               final code = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => const ScannerPage()));
               if (code != null && context.mounted) {
                 await Navigator.push(context, MaterialPageRoute(builder: (_) => PackageEditPage(initialTracking: code)));
-                load();
+                load(syncCourier: true);
               }
             }),
             _quick(context, Icons.shopping_cart_checkout, 'Nuevo pedido', () async {
@@ -267,6 +290,7 @@ class _DashboardPageState extends State<DashboardPage> {
               await Navigator.push(context, MaterialPageRoute(builder: (_) => const PurchaseEditPage(startWithReceipt: true)));
               load();
             }),
+            _quick(context, Icons.cloud_sync, 'Couriers', openCourier),
           ]),
           const SizedBox(height: 16),
           _sectionCard(context, '¿Qué debo hacer ahora?', Icons.assignment_turned_in, tasks.map((e) => Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Text('• $e'))).toList()),
