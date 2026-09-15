@@ -118,9 +118,9 @@ class _AgencyShipmentEditPageState extends State<AgencyShipmentEditPage> {
       Store.list('recipients'),
       Store.settings(),
     ]);
-    packages = active(r[0]);
-    clients = active(r[1]);
-    recipients = active(r[2]);
+    packages = active(r[0] as List<Map<String, dynamic>>);
+    clients = active(r[1] as List<Map<String, dynamic>>);
+    recipients = active(r[2] as List<Map<String, dynamic>>);
     final s = r[3] as Map<String, dynamic>;
 
     agencyName.text = '${widget.existing?['agencyName'] ?? s['defaultAgencyName'] ?? 'Javier'}';
