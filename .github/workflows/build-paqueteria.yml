@@ -44,15 +44,6 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path('app/lib/packages.dart')
-          s = p.read_text()
-          s = s.replace(
-              "clients=active(r[0]);purchases=active(r[1]);recipients=active(r[2]);",
-              "clients=active(r[0] as List<Map<String,dynamic>>);purchases=active(r[1] as List<Map<String,dynamic>>);recipients=active(r[2] as List<Map<String,dynamic>>);"
-          )
-          s = s.replace("Uri?u;switch(carrier)", "late final Uri u;switch(carrier)")
-          p.write_text(s)
-
           trip = Path('app/lib/trips.dart')
           ts = trip.read_text().replace("Tarifa $/lb", "Tarifa \\$/lb")
           trip.write_text(ts)
@@ -61,7 +52,7 @@ jobs:
           ms = main.read_text()
           ms = ms.replace(
               "import 'package:flutter/material.dart';",
-              "import 'package:flutter/material.dart';\nimport 'package:flutter_local_notifications/flutter_local_notifications.dart';"
+              "import 'package:flutter/material.dart';\nimport 'package:flutter_local_notifications/flutter_local_notifications.dart';\nimport 'package:cross_file/cross_file.dart';\nimport 'package:pdf/pdf.dart';\nimport 'package:pdf/widgets.dart' as pw;\nimport 'package:share_plus/share_plus.dart';"
           )
           ms = ms.replace(
               "import 'package:url_launcher/url_launcher.dart';",
@@ -69,7 +60,7 @@ jobs:
           )
           ms = ms.replace(
               "part 'tracking_service.dart';",
-              "part 'tracking_service.dart';\npart 'background_sync.dart';"
+              "part 'tracking_service.dart';\npart 'bulletins.dart';\npart 'search.dart';\npart 'flight_service.dart';\npart 'background_sync.dart';"
           )
           old_main = """void main() {
             WidgetsFlutterBinding.ensureInitialized();
@@ -86,7 +77,31 @@ jobs:
           if old_main not in ms:
               raise SystemExit('No se encontró main() para aplicar la integración de background')
           ms = ms.replace(old_main, new_main)
+          ms = ms.replace(
+              "appBar: AppBar(title: const Text('Paquetería'), actions: [",
+              "appBar: AppBar(title: const Text('Paquetería'), actions: [\n        IconButton(tooltip: 'Buscar tracking o cliente', onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BusinessSearchPage())), icon: const Icon(Icons.search)),"
+          )
+          ms = ms.replace(
+              "final owed = purchases.where((e) => '${e['clientId']}' == clientId).fold<double>(0, (a, e) => a + number(e['clientTotal']));",
+              "final owed = purchases.fold<double>(0, (a, e) => a + purchaseAmountForClient(e, clientId));"
+          )
           main.write_text(ms)
+
+          clients = Path('app/lib/clients.dart')
+          cs = clients.read_text()
+          cs = cs.replace(
+              "purchases = active(r[2]).where((e) => '${e['clientId']}' == widget.clientId).toList();",
+              "purchases = active(r[2]).where((e) => purchaseHasClient(e, widget.clientId)).toList();"
+          )
+          cs = cs.replace(
+              "final due = purchases.fold<double>(0, (a,e)=>a+number(e['clientTotal'])) - payments.fold<double>(0,(a,e)=>a+number(e['amount']));",
+              "final due = purchases.fold<double>(0, (a,e)=>a+purchaseAmountForClient(e, widget.clientId)) - payments.fold<double>(0,(a,e)=>a+number(e['amount']));"
+          )
+          cs = cs.replace(
+              "title: Text('${p['store']} · ${money(number(p['clientTotal']))}'), subtitle: Text('${p['description']}\\n${p['status']}'))",
+              "title: Text('${p['store']} · ${money(purchaseAmountForClient(p, widget.clientId))}'), subtitle: Text('${p['description']}\\n${p['status']}'), trailing: IconButton(icon: const Icon(Icons.receipt_long), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BulletinPage(purchase: p, initialClientId: widget.clientId)))))"
+          )
+          clients.write_text(cs)
 
           tracking = Path('app/lib/tracking_service.dart')
           tr = tracking.read_text()
@@ -166,11 +181,11 @@ jobs:
         run: test "$(cat build.exit)" = "0"
 
       - name: Rename APK
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.2.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.3.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Paqueteria-APK
-          path: Paqueteria-v1.2.apk
+          path: Paqueteria-v1.3.apk
           retention-days: 30
