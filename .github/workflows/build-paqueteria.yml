@@ -57,18 +57,66 @@ jobs:
           ts = trip.read_text().replace("Tarifa $/lb", "Tarifa \\$/lb")
           trip.write_text(ts)
 
+          main = Path('app/lib/main.dart')
+          ms = main.read_text()
+          ms = ms.replace(
+              "import 'package:flutter/material.dart';",
+              "import 'package:flutter/material.dart';\nimport 'package:flutter_local_notifications/flutter_local_notifications.dart';"
+          )
+          ms = ms.replace(
+              "import 'package:url_launcher/url_launcher.dart';",
+              "import 'package:url_launcher/url_launcher.dart';\nimport 'package:workmanager/workmanager.dart';"
+          )
+          ms = ms.replace(
+              "part 'tracking_service.dart';",
+              "part 'tracking_service.dart';\npart 'background_sync.dart';"
+          )
+          old_main = """void main() {
+            WidgetsFlutterBinding.ensureInitialized();
+            runApp(const PaqueteriaApp());
+          }"""
+          new_main = """Future<void> main() async {
+            WidgetsFlutterBinding.ensureInitialized();
+            try {
+              await NotificationService.initialize(requestPermission: true);
+              await BackgroundCourierSync.initializeAndSchedule();
+            } catch (_) {}
+            runApp(const PaqueteriaApp());
+          }"""
+          if old_main not in ms:
+              raise SystemExit('No se encontró main() para aplicar la integración de background')
+          ms = ms.replace(old_main, new_main)
+          main.write_text(ms)
+
+          tracking = Path('app/lib/tracking_service.dart')
+          tr = tracking.read_text()
+          tr = tr.replace(
+              "Text('• EasyPost cobra los trackers independientes por uso.'),",
+              "Text('• EasyPost cobra los trackers independientes por uso.'),\n          Text('• Android revisará los trackings periódicamente en segundo plano y mostrará una notificación cuando detecte un cambio.'),"
+          )
+          tracking.write_text(tr)
+
           manifest = Path('app/android/app/src/main/AndroidManifest.xml')
           m = manifest.read_text()
+          permissions = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.VIBRATE" />'''
           if 'android.permission.INTERNET' not in m:
-              m = m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />')
+              m = m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', permissions)
+          else:
+              for perm in ['POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE']:
+                  if f'android.permission.{perm}' not in m:
+                      m = m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', f'<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.{perm}" />')
           m = m.replace('android:label="paqueteria"', 'android:label="Paquetería"')
           manifest.write_text(m)
 
           gradle = Path('app/android/app/build.gradle.kts')
           g = gradle.read_text()
-          deps = '''\ndependencies {\n    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")\n    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")\n    implementation("com.google.mlkit:text-recognition-japanese:16.0.1")\n    implementation("com.google.mlkit:text-recognition-korean:16.0.1")\n}\n'''
+          if 'isCoreLibraryDesugaringEnabled' not in g:
+              g = g.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true')
+          deps = '''\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")\n    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")\n    implementation("com.google.mlkit:text-recognition-japanese:16.0.1")\n    implementation("com.google.mlkit:text-recognition-korean:16.0.1")\n}\n'''
           if 'com.google.mlkit:text-recognition-chinese' not in g:
               g += deps
+          elif 'coreLibraryDesugaring(' not in g:
+              g += '\ndependencies { coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4") }\n'
           gradle.write_text(g)
           PY
 
@@ -118,11 +166,11 @@ jobs:
         run: test "$(cat build.exit)" = "0"
 
       - name: Rename APK
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.0.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.2.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Paqueteria-APK
-          path: Paqueteria-v1.0.apk
+          path: Paqueteria-v1.2.apk
           retention-days: 30
