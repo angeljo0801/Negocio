@@ -1,0 +1,95 @@
+name: Build Paqueteria APK
+
+on:
+  push:
+    branches: ["paqueteria-v1"]
+    paths:
+      - "paqueteria/**"
+      - ".github/workflows/build-paqueteria.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install SVG converter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin
+
+      - name: Create Android scaffold
+        run: |
+          flutter create --platforms=android --org com.angelapps --project-name paqueteria app
+          rm -rf app/lib app/test
+          cp -R paqueteria/lib app/lib
+          cp paqueteria/pubspec.yaml app/pubspec.yaml
+          mkdir -p app/assets
+          rsvg-convert -w 1024 -h 1024 paqueteria/assets/icon.svg -o app/assets/icon.png
+
+      - name: Patch source and Android configuration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Future.wait contains both list futures and settings, so make the list casts explicit.
+          p = Path('app/lib/packages.dart')
+          s = p.read_text()
+          s = s.replace(
+              "clients=active(r[0]);purchases=active(r[1]);recipients=active(r[2]);",
+              "clients=active(r[0] as List<Map<String,dynamic>>);purchases=active(r[1] as List<Map<String,dynamic>>);recipients=active(r[2] as List<Map<String,dynamic>>);"
+          )
+          p.write_text(s)
+
+          manifest = Path('app/android/app/src/main/AndroidManifest.xml')
+          m = manifest.read_text()
+          if 'android.permission.INTERNET' not in m:
+              m = m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />')
+          m = m.replace('android:label="paqueteria"', 'android:label="Paquetería"')
+          manifest.write_text(m)
+
+          gradle = Path('app/android/app/build.gradle.kts')
+          g = gradle.read_text()
+          deps = '''\ndependencies {\n    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")\n    implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")\n    implementation("com.google.mlkit:text-recognition-japanese:16.0.1")\n    implementation("com.google.mlkit:text-recognition-korean:16.0.1")\n}\n'''
+          if 'com.google.mlkit:text-recognition-chinese' not in g:
+              g += deps
+          gradle.write_text(g)
+          PY
+
+      - name: Get dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Generate launcher icon
+        working-directory: app
+        run: dart run flutter_launcher_icons
+
+      - name: Analyze source
+        working-directory: app
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+
+      - name: Build release APK
+        working-directory: app
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.0.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Paqueteria-APK
+          path: Paqueteria-v1.0.apk
+          retention-days: 30
