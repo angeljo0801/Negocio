@@ -11,6 +11,8 @@ void courierCallbackDispatcher() {
       await NotificationService.initialize(requestPermission: false);
       await EasyPostService.syncAll();
       await NotificationService.publishPendingCourierChanges();
+      await FlightService.syncIfDue();
+      await NotificationService.publishPendingFlightChanges();
       return true;
     } catch (_) {
       return false;
@@ -58,9 +60,7 @@ class NotificationService {
       _initialized = true;
     }
     if (requestPermission) {
-      await _plugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.requestNotificationsPermission();
+      await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
     }
   }
 
@@ -68,7 +68,6 @@ class NotificationService {
     final notices = await Store.list('courierNotifications');
     final clients = active(await Store.list('clients'));
     var dirty = false;
-
     for (final n in notices) {
       if (n['deleted'] == true || n['notificationSent'] == true) continue;
       final client = clientName(clients, '${n['clientId'] ?? ''}');
@@ -94,7 +93,38 @@ class NotificationService {
       n['notificationSentAt'] = DateTime.now().toIso8601String();
       dirty = true;
     }
-
     if (dirty) await Store.saveList('courierNotifications', notices);
+  }
+
+  static Future<void> publishPendingFlightChanges() async {
+    final notices = await Store.list('flightNotifications');
+    var dirty = false;
+    for (final n in notices) {
+      if (n['deleted'] == true || n['notificationSent'] == true) continue;
+      final id = (number(n['id']) % 2147483647).toInt();
+      const android = AndroidNotificationDetails(
+        'flight_price_updates',
+        'Alertas de vuelos baratos',
+        channelDescription: 'Avisos cuando una ruta vigilada baja del precio objetivo',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
+      const details = NotificationDetails(android: android);
+      final route = '${n['origin']} → ${n['destination']}';
+      final price = money(number(n['price']));
+      final date = '${n['date'] ?? ''}';
+      final airline = '${n['airline'] ?? ''}';
+      await _plugin.show(
+        id: id,
+        title: '✈️ Vuelo barato: $route · $price',
+        body: '$date${airline.isNotEmpty ? ' · $airline' : ''}',
+        notificationDetails: details,
+        payload: 'flight:${n['watchId'] ?? ''}',
+      );
+      n['notificationSent'] = true;
+      n['notificationSentAt'] = DateTime.now().toIso8601String();
+      dirty = true;
+    }
+    if (dirty) await Store.saveList('flightNotifications', notices);
   }
 }
