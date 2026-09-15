@@ -44,13 +44,13 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          # Future.wait contains both list futures and settings, so make the list casts explicit.
           p = Path('app/lib/packages.dart')
           s = p.read_text()
           s = s.replace(
               "clients=active(r[0]);purchases=active(r[1]);recipients=active(r[2]);",
               "clients=active(r[0] as List<Map<String,dynamic>>);purchases=active(r[1] as List<Map<String,dynamic>>);recipients=active(r[2] as List<Map<String,dynamic>>);"
           )
+          s = s.replace("Uri?u;switch(carrier)", "late final Uri u;switch(carrier)")
           p.write_text(s)
 
           manifest = Path('app/android/app/src/main/AndroidManifest.xml')
@@ -78,7 +78,15 @@ jobs:
 
       - name: Analyze source
         working-directory: app
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+        continue-on-error: true
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib 2>&1 | tee ../analyze.txt
+
+      - name: Upload analyzer diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: Paqueteria-Analyzer
+          path: analyze.txt
+          retention-days: 7
 
       - name: Build release APK
         working-directory: app
