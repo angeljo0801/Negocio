@@ -48,6 +48,23 @@ jobs:
           ts = trip.read_text().replace("Tarifa $/lb", "Tarifa \\$/lb")
           trip.write_text(ts)
 
+          packages = Path('app/lib/packages.dart')
+          ps = packages.read_text()
+          ps = ps.replace(
+              "clients = active(r[0]); purchases = active(r[1]); recipients = active(r[2]);",
+              "clients = active(r[0] as List<Map<String, dynamic>>); purchases = active(r[1] as List<Map<String, dynamic>>); recipients = active(r[2] as List<Map<String, dynamic>>);"
+          )
+          ps = ps.replace("return showDialog<String>(", "return await showDialog<String>(")
+          packages.write_text(ps)
+
+          purchases = Path('app/lib/purchases.dart')
+          pus = purchases.read_text().replace("Wrap(mainAxisSize: MainAxisSize.min, children:", "Wrap(children:")
+          purchases.write_text(pus)
+
+          flights = Path('app/lib/flights.dart')
+          fs = flights.read_text().replace("Wrap(mainAxisSize: MainAxisSize.min, children:", "Wrap(children:")
+          flights.write_text(fs)
+
           main = Path('app/lib/main.dart')
           ms = main.read_text()
           ms = ms.replace(
