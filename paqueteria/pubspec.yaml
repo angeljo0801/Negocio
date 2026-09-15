@@ -1,0 +1,33 @@
+name: paqueteria
+publish_to: 'none'
+description: Herramientas de negocio para paqueteria a Cuba.
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.5.3
+  image_picker: ^1.1.2
+  google_mlkit_text_recognition: ^0.15.1
+  mobile_scanner: ^7.0.1
+  url_launcher: ^6.3.1
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon.png
+
+flutter_launcher_icons:
+  android: true
+  image_path: assets/icon.png
+  adaptive_icon_background: '#0B3D91'
+  adaptive_icon_foreground: assets/icon.png
