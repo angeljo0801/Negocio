@@ -53,6 +53,10 @@ jobs:
           s = s.replace("Uri?u;switch(carrier)", "late final Uri u;switch(carrier)")
           p.write_text(s)
 
+          trip = Path('app/lib/trips.dart')
+          ts = trip.read_text().replace("Tarifa $/lb", "Tarifa \\$/lb")
+          trip.write_text(ts)
+
           manifest = Path('app/android/app/src/main/AndroidManifest.xml')
           m = manifest.read_text()
           if 'android.permission.INTERNET' not in m:
@@ -79,9 +83,13 @@ jobs:
       - name: Analyze source
         working-directory: app
         continue-on-error: true
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib 2>&1 | tee ../analyze.txt
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib 2>&1 | tee ../analyze.txt
 
       - name: Upload analyzer diagnostics
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Paqueteria-Analyzer
