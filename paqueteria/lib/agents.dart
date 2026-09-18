@@ -34,8 +34,14 @@ double agentOrdersDue(Map<String, dynamic>? report) =>
 double agentRemittancesLiquidated(Map<String, dynamic>? report) =>
     _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + number(e['returnedToAlasCargo'] ?? e['ownerDue']));
 
+double agentRemittanceGrossProfit(Map<String, dynamic>? report) =>
+    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + (e.containsKey('grossProfit') ? number(e['grossProfit']) : number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount'])));
+
 double agentRemittanceMargin(Map<String, dynamic>? report) =>
-    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount']));
+    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + (e.containsKey('agentMargin') ? number(e['agentMargin']) : (e.containsKey('grossProfit') ? number(e['grossProfit']) : number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount']))));
+
+double agentRemittanceAlasCargoMargin(Map<String, dynamic>? report) =>
+    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + (e.containsKey('alasCargoMargin') ? number(e['alasCargoMargin']) : ((e.containsKey('grossProfit') ? number(e['grossProfit']) : number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount'])) - (e.containsKey('agentMargin') ? number(e['agentMargin']) : (e.containsKey('grossProfit') ? number(e['grossProfit']) : number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount']))))));
 
 double agentSettled(Map<String, dynamic>? report) =>
     _reportList(_reportData(report), 'settlements').fold<double>(0, (sum, e) => sum + number(e['amount']));
@@ -472,7 +478,9 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
             Text('Libras a liquidar: ${money(agentShippingDue(latest))}'),
             Text('Pedidos a liquidar: ${money(agentOrdersDue(latest))}'),
             Text('Remesas liquidadas: ${money(agentRemittancesLiquidated(latest))}'),
-            Text('Margen remesas: ${money(agentRemittanceMargin(latest))}'),
+            Text('Ganancia bruta remesas: ${money(agentRemittanceGrossProfit(latest))}'),
+            Text('Margen agente remesas: ${money(agentRemittanceMargin(latest))}'),
+            Text('Margen Alas Cargo remesas: ${money(agentRemittanceAlasCargoMargin(latest))}'),
             Text('Liquidado: ${money(agentSettled(latest))}'),
             Text('Saldo contigo: ${money(agentBalanceFromReport(latest))}', style: const TextStyle(fontWeight: FontWeight.bold)),
           ]),
@@ -509,7 +517,8 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
               for (final e in remittances)
                 ListTile(
                   title: Text('${_agentClientName(data, e['clientId'])} → ${e['beneficiary'] ?? ''}'),
-                  subtitle: Text('${e['status'] ?? ''}'),
+                  subtitle: Text('Recibido: ${money(number(e['clientTotal']))} · Cuba: ${money(number(e['cupAmount']))}\nAgente: ${money(e.containsKey('agentMargin')?number(e['agentMargin']):0)} · Alas Cargo: ${money(e.containsKey('alasCargoMargin')?number(e['alasCargoMargin']):0)}'),
+                  isThreeLine: true,
                   trailing: Text('Devuelto: ${money(number(e['returnedToAlasCargo'] ?? e['ownerDue']))}'),
                 ),
             ],
@@ -575,7 +584,9 @@ class AgentReportPage extends StatelessWidget {
           Text('Libras a liquidar: ${money(agentShippingDue(report))}'),
           Text('Pedidos a liquidar: ${money(agentOrdersDue(report))}'),
           Text('Remesas liquidadas: ${money(agentRemittancesLiquidated(report))}'),
-          Text('Margen remesas: ${money(agentRemittanceMargin(report))}'),
+          Text('Ganancia bruta remesas: ${money(agentRemittanceGrossProfit(report))}'),
+          Text('Margen agente remesas: ${money(agentRemittanceMargin(report))}'),
+          Text('Margen Alas Cargo remesas: ${money(agentRemittanceAlasCargoMargin(report))}'),
           Text('Pagado a Alas Cargo: ${money(agentSettled(report))}'),
           Text('Saldo: ${money(agentBalanceFromReport(report))}', style: const TextStyle(fontWeight: FontWeight.bold)),
         ]),
@@ -602,7 +613,8 @@ class AgentReportPage extends StatelessWidget {
           for (final e in remittances)
             ListTile(
               title: Text('${_agentClientName(data, e['clientId'])} → ${e['beneficiary'] ?? ''}'),
-              subtitle: Text('${e['status'] ?? ''}'),
+              subtitle: Text('Recibido: ${money(number(e['clientTotal']))} · Cuba: ${money(number(e['cupAmount']))}\nAgente: ${money(e.containsKey('agentMargin')?number(e['agentMargin']):0)} · Alas Cargo: ${money(e.containsKey('alasCargoMargin')?number(e['alasCargoMargin']):0)}'),
+              isThreeLine: true,
               trailing: Text('Devuelto: ${money(number(e['returnedToAlasCargo'] ?? e['ownerDue']))}'),
             ),
         ],
