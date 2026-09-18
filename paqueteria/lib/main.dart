@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:http/http.dart' as http;
@@ -19,6 +20,7 @@ part 'trips.dart';
 part 'flights.dart';
 part 'extras.dart';
 part 'tracking_service.dart';
+part 'agents.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -195,7 +197,7 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   bool loading = true;
   bool courierSyncing = false;
-  List<Map<String, dynamic>> clients = [], purchases = [], packages = [], trips = [], payments = [], watches = [];
+  List<Map<String, dynamic>> clients = [], purchases = [], packages = [], trips = [], payments = [], watches = [], agents = [], agentReports = [];
   Map<String, dynamic> settings = {};
 
   @override
@@ -217,6 +219,8 @@ class _DashboardPageState extends State<DashboardPage> {
       Store.list('trips'),
       Store.list('payments'),
       Store.list('flightWatches'),
+      Store.list('agents'),
+      Store.list('agentReports'),
       Store.settings(),
     ]);
     if (!mounted) return;
@@ -227,7 +231,9 @@ class _DashboardPageState extends State<DashboardPage> {
       trips = active(r[3] as List<Map<String, dynamic>>);
       payments = active(r[4] as List<Map<String, dynamic>>);
       watches = active(r[5] as List<Map<String, dynamic>>);
-      settings = r[6] as Map<String, dynamic>;
+      agents = active(r[6] as List<Map<String, dynamic>>);
+      agentReports = active(r[7] as List<Map<String, dynamic>>);
+      settings = r[8] as Map<String, dynamic>;
       loading = false;
     });
   }
@@ -247,6 +253,7 @@ class _DashboardPageState extends State<DashboardPage> {
     final due = clients.fold<double>(0, (a, c) => a + clientDue('${c['id']}', purchases, payments));
     final cheap = watches.where((e) => number(e['lastPrice']) > 0 && number(e['lastPrice']) <= number(e['targetPrice'])).length;
     final courierErrors = packages.where((e) => '${e['courierError'] ?? ''}'.trim().isNotEmpty).length;
+    final agentDue = agents.fold<double>(0, (sum, a) => sum + agentBalanceFromReport(latestAgentReport('${a['id']}', agentReports)));
     final tasks = <String>[];
     if (pendingPurchases > 0) tasks.add('Comprar $pendingPurchases pedido(s) pendiente(s).');
     if (inTransit > 0) tasks.add('Revisar $inTransit paquete(s) actualmente en tránsito.');
@@ -254,6 +261,7 @@ class _DashboardPageState extends State<DashboardPage> {
     if (due > 0) tasks.add('Hay ${money(due)} pendientes de cobro.');
     if (readyLb > 0) tasks.add('Tienes ${readyLb.toStringAsFixed(1)} lb recibidas listas para organizar en un viaje.');
     if (cheap > 0) tasks.add('Hay $cheap ruta(s) con precio observado por debajo de tu objetivo.');
+    if (agentDue > 0) tasks.add('Tus agentes reportan ${money(agentDue)} pendientes de liquidar contigo.');
     if (tasks.isEmpty) tasks.add('No hay pendientes críticos registrados.');
 
     return Scaffold(
@@ -291,6 +299,10 @@ class _DashboardPageState extends State<DashboardPage> {
               load();
             }),
             _quick(context, Icons.cloud_sync, 'Couriers', openCourier),
+            _quick(context, Icons.badge_outlined, 'Agentes', () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => const AgentsPage()));
+              load();
+            }),
           ]),
           const SizedBox(height: 16),
           _sectionCard(context, '¿Qué debo hacer ahora?', Icons.assignment_turned_in, tasks.map((e) => Padding(padding: const EdgeInsets.symmetric(vertical: 5), child: Text('• $e'))).toList()),
@@ -307,6 +319,8 @@ class _DashboardPageState extends State<DashboardPage> {
               _stat('Por comprar', '$pendingPurchases', Icons.shopping_bag),
               _stat('Carga recibida', '${readyLb.toStringAsFixed(1)} lb', Icons.inventory),
               _stat('Por cobrar', money(due), Icons.payments),
+              _stat('Agentes', '${agents.length}', Icons.badge_outlined),
+              _stat('Saldo agentes', money(agentDue), Icons.account_balance_wallet_outlined),
             ],
           ),
           const SizedBox(height: 12),
