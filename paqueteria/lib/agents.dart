@@ -369,7 +369,8 @@ class _AgentsPageState extends State<AgentsPage> {
                         ],
                       ),
                       onTap: () async {
-                        await Navigator.push(context, MaterialPageRoute(builder: (_) => AgentDetailPage(agentId: '${a['id']}')));
+                        final action = await Navigator.push<String>(context, MaterialPageRoute(builder: (_) => AgentDetailPage(agentId: '${a['id']}')));
+                        if (action == 'import') await importReport(forcedAgentId: '${a['id']}');
                         await load();
                       },
                     );
@@ -419,19 +420,6 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
     });
   }
 
-  Future<void> importHere() async {
-    final pageState = context.findAncestorStateOfType<_AgentsPageState>();
-    if (pageState != null) {
-      await pageState.importReport(forcedAgentId: widget.agentId);
-      await load();
-      return;
-    }
-    // Normally this page is opened from AgentsPage. This fallback keeps the action clear.
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Regresa a Agentes y usa “Importar informe” en el menú del agente.')));
-    }
-  }
-
   Future<void> deleteReport(Map<String, dynamic> report) async {
     if (!await confirmDelete(context, 'este informe')) return;
     await softDelete('agentReports', '${report['id']}');
@@ -451,7 +439,9 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
     final clients = _reportList(data, 'clients');
 
     return Scaffold(
-      appBar: AppBar(title: Text('${agent!['name']}')),
+      appBar: AppBar(title: Text('${agent!['name']}'), actions: [
+        IconButton(tooltip: 'Importar informe', icon: const Icon(Icons.upload_file), onPressed: () => Navigator.pop(context, 'import')),
+      ]),
       body: ListView(padding: const EdgeInsets.all(12), children: [
         _sectionCard(context, 'Agente', Icons.badge, [
           Text('${agent!['name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -463,7 +453,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
           _sectionCard(context, 'Informes', Icons.description_outlined, [
             const Text('Este agente todavía no tiene informes importados.'),
             const SizedBox(height: 10),
-            const Text('Desde la pantalla Agentes, abre el menú de este agente y selecciona “Importar informe”.'),
+            const Text('Toca el botón de importar en la esquina superior para añadir el informe JSON de este agente.'),
           ])
         else ...[
           _sectionCard(context, 'Último informe', Icons.analytics_outlined, [
