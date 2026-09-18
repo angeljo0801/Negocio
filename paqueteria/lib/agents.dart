@@ -29,16 +29,16 @@ double agentShippingDue(Map<String, dynamic>? report) {
 }
 
 double agentOrdersDue(Map<String, dynamic>? report) =>
-    _reportList(_reportData(report), 'orders').fold<double>(0, (sum, e) => sum + number(e['ownerDue']));
+    _reportList(_reportData(report), 'orders').fold<double>(0, (sum, e) => sum + (e.containsKey('storeCost') ? number(e['storeCost']) : number(e['ownerDue'])));
 
-double agentRemittancesDue(Map<String, dynamic>? report) =>
-    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + number(e['ownerDue']));
+double agentRemittancesLiquidated(Map<String, dynamic>? report) =>
+    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + number(e['returnedToAlasCargo'] ?? e['ownerDue']));
 
 double agentSettled(Map<String, dynamic>? report) =>
     _reportList(_reportData(report), 'settlements').fold<double>(0, (sum, e) => sum + number(e['amount']));
 
 double agentBalanceFromReport(Map<String, dynamic>? report) =>
-    agentShippingDue(report) + agentOrdersDue(report) + agentRemittancesDue(report) - agentSettled(report);
+    agentShippingDue(report) + agentOrdersDue(report) - agentRemittancesLiquidated(report) - agentSettled(report);
 
 double agentPackageWeight(Map<String, dynamic>? report) =>
     _reportList(_reportData(report), 'packages').fold<double>(0, (sum, e) => sum + number(e['weightLb']));
@@ -468,7 +468,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
             const Divider(),
             Text('Por libras: ${money(agentShippingDue(latest))}'),
             Text('Por pedidos: ${money(agentOrdersDue(latest))}'),
-            Text('Por remesas: ${money(agentRemittancesDue(latest))}'),
+            Text('Remesas liquidadas: ${money(agentRemittancesLiquidated(latest))}'),
             Text('Liquidado: ${money(agentSettled(latest))}'),
             Text('Saldo contigo: ${money(agentBalanceFromReport(latest))}', style: const TextStyle(fontWeight: FontWeight.bold)),
           ]),
@@ -494,7 +494,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
                   title: Text('${_agentClientName(data, e['clientId'])} · ${e['store'] ?? ''}'),
                   subtitle: Text('${e['description'] ?? ''}\n${e['status'] ?? ''}'),
                   isThreeLine: true,
-                  trailing: Text('Debe: ${money(number(e['ownerDue']))}'),
+                  trailing: Text('Debe: ${money(e.containsKey('storeCost') ? number(e['storeCost']) : number(e['ownerDue']))}'),
                 ),
             ],
           ),
@@ -506,7 +506,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
                 ListTile(
                   title: Text('${_agentClientName(data, e['clientId'])} → ${e['beneficiary'] ?? ''}'),
                   subtitle: Text('${e['status'] ?? ''}'),
-                  trailing: Text('Debe: ${money(number(e['ownerDue']))}'),
+                  trailing: Text('Devuelto: ${money(number(e['returnedToAlasCargo'] ?? e['ownerDue']))}'),
                 ),
             ],
           ),
@@ -570,7 +570,7 @@ class AgentReportPage extends StatelessWidget {
           const Divider(),
           Text('Libras para Alas Cargo: ${money(agentShippingDue(report))}'),
           Text('Pedidos para Alas Cargo: ${money(agentOrdersDue(report))}'),
-          Text('Remesas para Alas Cargo: ${money(agentRemittancesDue(report))}'),
+          Text('Remesas liquidadas: ${money(agentRemittancesLiquidated(report))}'),
           Text('Pagado a Alas Cargo: ${money(agentSettled(report))}'),
           Text('Saldo: ${money(agentBalanceFromReport(report))}', style: const TextStyle(fontWeight: FontWeight.bold)),
         ]),
@@ -588,7 +588,7 @@ class AgentReportPage extends StatelessWidget {
             ListTile(
               title: Text('${_agentClientName(data, e['clientId'])} · ${e['store'] ?? ''}'),
               subtitle: Text('${e['description'] ?? ''}'),
-              trailing: Text(money(number(e['ownerDue']))),
+              trailing: Text('Devuelto: ${money(number(e['returnedToAlasCargo'] ?? e['ownerDue']))}'),
             ),
         ],
         if (remittances.isNotEmpty) ...[
