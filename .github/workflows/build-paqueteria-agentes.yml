@@ -65,11 +65,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Rename APK
-        run: cp app_agent/build/app/outputs/flutter-apk/app-release.apk Paqueteria-Agentes-v1.2.apk
+        run: cp app_agent/build/app/outputs/flutter-apk/app-release.apk Paqueteria-Agentes-v1.3.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Paqueteria-Agentes-APK
-          path: Paqueteria-Agentes-v1.2.apk
+          path: Paqueteria-Agentes-v1.3.apk
           retention-days: 30
