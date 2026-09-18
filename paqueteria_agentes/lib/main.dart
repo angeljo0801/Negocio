@@ -70,11 +70,8 @@ String money(num v)=>'\$${v.toStringAsFixed(2)}';
 String today(){final d=DateTime.now();return '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';}
 double remittanceReturned(Map<String,dynamic> e)=>numv(e['returnedToAlasCargo']??e['ownerDue']);
 double remittanceGrossProfit(Map<String,dynamic> e)=>e.containsKey('grossProfit')?numv(e['grossProfit']):remittanceReturned(e)-numv(e['cupAmount']);
-double remittanceAgentProfit(Map<String,dynamic> e)=>e.containsKey('agentMargin')?numv(e['agentMargin']):remittanceGrossProfit(e);
-double remittanceAlasCargoProfit(Map<String,dynamic> e)=>e.containsKey('alasCargoMargin')?numv(e['alasCargoMargin']):0;
-double remittanceGrossProfit(Map<String,dynamic> e){if(e.containsKey('grossProfit'))return numv(e['grossProfit']);return remittanceReturned(e)-numv(e['cupAmount']);}
-double remittanceAgentMargin(Map<String,dynamic> e){if(e.containsKey('agentMargin'))return numv(e['agentMargin']);return remittanceGrossProfit(e);}
-double remittanceAlasMargin(Map<String,dynamic> e){if(e.containsKey('alasCargoMargin'))return numv(e['alasCargoMargin']);return remittanceGrossProfit(e)-remittanceAgentMargin(e);}
+double remittanceAgentMargin(Map<String,dynamic> e)=>e.containsKey('agentMargin')?numv(e['agentMargin']):remittanceGrossProfit(e);
+double remittanceAlasMargin(Map<String,dynamic> e)=>e.containsKey('alasCargoMargin')?numv(e['alasCargoMargin']):remittanceGrossProfit(e)-remittanceAgentMargin(e);
 List<Map<String,dynamic>> active(List<Map<String,dynamic>> r)=>r.where((e)=>e['deleted']!=true).toList();
 String clientName(List<Map<String,dynamic>> cs,String? id)=>cs.where((e)=>'${e['id']}'=='${id??''}').map((e)=>'${e['name']}').firstOrNull??'Sin cliente';
 
@@ -276,9 +273,9 @@ class _RemittancesPageState extends State<RemittancesPage>{
   Future<void>load()async{final r=await Future.wait([Store.list('remittances'),Store.list('clients')]);rows=active(r[0]);clients=active(r[1]);if(mounted)setState((){});}
   Future<void>edit([Map<String,dynamic>?e])async{
     final s=await Store.settings();
-    final configuredLimit=numv(s['remittanceFixedLimit'])>0?numv(s['remittanceFixedLimit']):100.0;
-    final configuredFee=numv(s['remittanceFixedFee']);
-    final configuredPercent=numv(s['remittanceAgentPercent']).clamp(0,100).toDouble();
+    final configuredLimit=numv(s['remittanceThreshold'])>0?numv(s['remittanceThreshold']):100.0;
+    final configuredFee=numv(s['remittanceFlatFee']);
+    final configuredPercent=numv(s['remittanceAgentSharePct']).clamp(0,100).toDouble();
     final limit=e!=null&&e.containsKey('ruleLimit')?numv(e['ruleLimit']):configuredLimit;
     final fixedFee=e!=null&&e.containsKey('fixedFee')?numv(e['fixedFee']):configuredFee;
     final agentPercent=e!=null&&e.containsKey('agentPercent')?numv(e['agentPercent']).clamp(0,100).toDouble():configuredPercent;
@@ -318,7 +315,7 @@ class _RemittancesPageState extends State<RemittancesPage>{
       final i=all.indexWhere((x)=>x['id']==item['id']);if(i>=0)all[i]={...all[i],...item};else all.add(item);await Store.save('remittances',all);load();
     }
   }
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Remesas'),actions:[IconButton(tooltip:'Ajustes de remesas',icon:const Icon(Icons.settings),onPressed:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const SettingsPage()));})]),body:rows.isEmpty?const Center(child:Text('No hay remesas.')):ListView.builder(itemCount:rows.length,itemBuilder:(_,i){final e=rows[i];return ListTile(leading:const Icon(Icons.send),title:Text('${clientName(clients,'${e['clientId']}')} → ${e['beneficiary']}'),subtitle:Text('Recibido: ${money(remittanceReturned(e))} · Cuba: ${money(numv(e['cupAmount']))}\nAgente: ${money(remittanceAgentProfit(e))} · Alas Cargo: ${money(remittanceAlasCargoProfit(e))} · ${e['status']}'),isThreeLine:true,onTap:()=>edit(e),trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()async{if(await confirmDelete(context)){await softDelete('remittances','${e['id']}');load();}}));}),floatingActionButton:FloatingActionButton.extended(onPressed:()=>edit(),icon:const Icon(Icons.add),label:const Text('Remesa')));
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Remesas'),actions:[IconButton(tooltip:'Ajustes de remesas',icon:const Icon(Icons.settings),onPressed:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const SettingsPage()));})]),body:rows.isEmpty?const Center(child:Text('No hay remesas.')):ListView.builder(itemCount:rows.length,itemBuilder:(_,i){final e=rows[i];return ListTile(leading:const Icon(Icons.send),title:Text('${clientName(clients,'${e['clientId']}')} → ${e['beneficiary']}'),subtitle:Text('Recibido: ${money(remittanceReturned(e))} · Cuba: ${money(numv(e['cupAmount']))}\nAgente: ${money(remittanceAgentMargin(e))} · Alas Cargo: ${money(remittanceAlasMargin(e))} · ${e['status']}'),isThreeLine:true,onTap:()=>edit(e),trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()async{if(await confirmDelete(context)){await softDelete('remittances','${e['id']}');load();}}));}),floatingActionButton:FloatingActionButton.extended(onPressed:()=>edit(),icon:const Icon(Icons.add),label:const Text('Remesa')));
 }
 
 class SettlementsPage extends StatefulWidget{const SettlementsPage({super.key});@override State<SettlementsPage> createState()=>_SettlementsPageState();}
@@ -360,14 +357,14 @@ class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@overr
 class _SettingsPageState extends State<SettingsPage>{
   final name=TextEditingController(),phone=TextEditingController(),rate=TextEditingController(),remLimit=TextEditingController(),remFee=TextEditingController(),remPercent=TextEditingController();bool loading=true;
   @override void initState(){super.initState();load();}
-  Future<void>load()async{final s=await Store.settings();name.text='${s['agentName']}';phone.text='${s['phone']}';rate.text='${s['defaultClientRate']}';remLimit.text='${s['remittanceFixedLimit']}';remFee.text='${s['remittanceFixedFee']}';remPercent.text='${s['remittanceAgentPercent']}';if(mounted)setState(()=>loading=false);}
-  Future<void>save()async{final s=await Store.settings();s['agentName']=name.text.trim();s['phone']=phone.text.trim();s['defaultClientRate']=numv(rate.text);s['remittanceFixedLimit']=numv(remLimit.text)>0?numv(remLimit.text):100.0;s['remittanceFixedFee']=numv(remFee.text);s['remittanceAgentPercent']=numv(remPercent.text).clamp(0,100).toDouble();await Store.saveSettings(s);if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Configuración guardada.')));}
+  Future<void>load()async{final s=await Store.settings();name.text='${s['agentName']}';phone.text='${s['phone']}';rate.text='${s['defaultClientRate']}';remLimit.text='${s['remittanceThreshold']}';remFee.text='${s['remittanceFlatFee']}';remPercent.text='${s['remittanceAgentSharePct']}';if(mounted)setState(()=>loading=false);}
+  Future<void>save()async{final s=await Store.settings();s['agentName']=name.text.trim();s['phone']=phone.text.trim();s['defaultClientRate']=numv(rate.text);s['remittanceThreshold']=numv(remLimit.text)>0?numv(remLimit.text):100.0;s['remittanceFlatFee']=numv(remFee.text);s['remittanceAgentSharePct']=numv(remPercent.text).clamp(0,100).toDouble();await Store.saveSettings(s);if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Configuración guardada.')));}
   @override Widget build(BuildContext context){if(loading)return const Scaffold(body:Center(child:CircularProgressIndicator()));return Scaffold(appBar:AppBar(title:const Text('Perfil y tarifas')),body:ListView(padding:const EdgeInsets.all(16),children:[
     TextField(controller:name,decoration:const InputDecoration(labelText:'Nombre del agente')),const SizedBox(height:12),
     TextField(controller:phone,decoration:const InputDecoration(labelText:'Teléfono')),const SizedBox(height:12),
     TextField(controller:rate,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Tarifa predeterminada que cobras a tus clientes por lb')),const SizedBox(height:12),
     InputDecorator(decoration:const InputDecoration(labelText:'Tarifa fija para Alas Cargo'),child:Text('${money(alasCargoRatePerLb)} / lb')),const SizedBox(height:8),
-    const Text('Si cobras más de \\$5/lb, la diferencia queda como margen del agente.'),const SizedBox(height:20),const Divider(),
+    const Text('Si cobras más de \$5/lb, la diferencia queda como margen del agente.'),const SizedBox(height:20),const Divider(),
     Text('Ajustes de remesas',style:Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight:FontWeight.bold)),const SizedBox(height:8),
     const Text('Estas reglas se aplican automáticamente al crear nuevas remesas.'),const SizedBox(height:12),
     TextField(controller:remLimit,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Aplicar tarifa fija por debajo de (USD)')),const SizedBox(height:12),
