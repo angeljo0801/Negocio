@@ -324,7 +324,7 @@ class _SettingsPageState extends State<SettingsPage>{
     TextField(controller:name,decoration:const InputDecoration(labelText:'Nombre del agente')),const SizedBox(height:12),TextField(controller:phone,decoration:const InputDecoration(labelText:'Teléfono')),const SizedBox(height:12),
     TextField(controller:rate,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Tarifa predeterminada que cobras a tus clientes por lb')),const SizedBox(height:12),
     InputDecorator(decoration:const InputDecoration(labelText:'Tarifa fija para Alas Cargo'),child:Text('${money(alasCargoRatePerLb)} / lb')),const SizedBox(height:8),
-    const Text('La tarifa de Alas Cargo no se descuenta de tu tarifa: se calcula por separado. Si cobras más de $5/lb, la diferencia queda como margen del agente.'),const SizedBox(height:18),
+    const Text('La tarifa de Alas Cargo no se descuenta de tu tarifa: se calcula por separado. Si cobras más de \$5/lb, la diferencia queda como margen del agente.'),const SizedBox(height:18),
     FilledButton.icon(onPressed:save,icon:const Icon(Icons.save),label:const Text('Guardar')),
   ]));}
 }
