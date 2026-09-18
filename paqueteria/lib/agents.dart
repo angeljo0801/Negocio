@@ -34,6 +34,9 @@ double agentOrdersDue(Map<String, dynamic>? report) =>
 double agentRemittancesLiquidated(Map<String, dynamic>? report) =>
     _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + number(e['returnedToAlasCargo'] ?? e['ownerDue']));
 
+double agentRemittanceMargin(Map<String, dynamic>? report) =>
+    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount']));
+
 double agentSettled(Map<String, dynamic>? report) =>
     _reportList(_reportData(report), 'settlements').fold<double>(0, (sum, e) => sum + number(e['amount']));
 
@@ -469,6 +472,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
             Text('Libras a liquidar: ${money(agentShippingDue(latest))}'),
             Text('Pedidos a liquidar: ${money(agentOrdersDue(latest))}'),
             Text('Remesas liquidadas: ${money(agentRemittancesLiquidated(latest))}'),
+            Text('Margen remesas: ${money(agentRemittanceMargin(latest))}'),
             Text('Liquidado: ${money(agentSettled(latest))}'),
             Text('Saldo contigo: ${money(agentBalanceFromReport(latest))}', style: const TextStyle(fontWeight: FontWeight.bold)),
           ]),
@@ -571,6 +575,7 @@ class AgentReportPage extends StatelessWidget {
           Text('Libras a liquidar: ${money(agentShippingDue(report))}'),
           Text('Pedidos a liquidar: ${money(agentOrdersDue(report))}'),
           Text('Remesas liquidadas: ${money(agentRemittancesLiquidated(report))}'),
+          Text('Margen remesas: ${money(agentRemittanceMargin(report))}'),
           Text('Pagado a Alas Cargo: ${money(agentSettled(report))}'),
           Text('Saldo: ${money(agentBalanceFromReport(report))}', style: const TextStyle(fontWeight: FontWeight.bold)),
         ]),
