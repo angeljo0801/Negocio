@@ -46,14 +46,17 @@ class Store {
   static Future<Map<String,dynamic>> settings() async {
     final p=await SharedPreferences.getInstance();
     final raw=p.getString('agent_settings');
-    if(raw==null)return {'agentName':'','phone':'','defaultClientRate':6.0};
+    if(raw==null)return {'agentName':'','phone':'','defaultClientRate':6.0,'remittanceThreshold':100.0,'remittanceFlatFee':10.0,'remittanceAgentSharePct':100.0};
     try{
       final m=Map<String,dynamic>.from(jsonDecode(raw) as Map);
       m.putIfAbsent('agentName',()=> '');
       m.putIfAbsent('phone',()=> '');
       m.putIfAbsent('defaultClientRate',()=>6.0);
+      m.putIfAbsent('remittanceThreshold',()=>100.0);
+      m.putIfAbsent('remittanceFlatFee',()=>10.0);
+      m.putIfAbsent('remittanceAgentSharePct',()=>100.0);
       return m;
-    }catch(_){return {'agentName':'','phone':'','defaultClientRate':6.0};}
+    }catch(_){return {'agentName':'','phone':'','defaultClientRate':6.0,'remittanceThreshold':100.0,'remittanceFlatFee':10.0,'remittanceAgentSharePct':100.0};}
   }
   static Future<void> saveSettings(Map<String,dynamic> m) async {
     final p=await SharedPreferences.getInstance();
@@ -66,6 +69,9 @@ double numv(dynamic v)=>double.tryParse('${v??''}'.replaceAll(',','').replaceAll
 String money(num v)=>'\$${v.toStringAsFixed(2)}';
 String today(){final d=DateTime.now();return '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';}
 double remittanceReturned(Map<String,dynamic> e)=>numv(e['returnedToAlasCargo']??e['ownerDue']);
+double remittanceGrossProfit(Map<String,dynamic> e){if(e.containsKey('grossProfit'))return numv(e['grossProfit']);return remittanceReturned(e)-numv(e['cupAmount']);}
+double remittanceAgentMargin(Map<String,dynamic> e){if(e.containsKey('agentMargin'))return numv(e['agentMargin']);return remittanceGrossProfit(e);}
+double remittanceAlasMargin(Map<String,dynamic> e){if(e.containsKey('alasCargoMargin'))return numv(e['alasCargoMargin']);return remittanceGrossProfit(e)-remittanceAgentMargin(e);}
 List<Map<String,dynamic>> active(List<Map<String,dynamic>> r)=>r.where((e)=>e['deleted']!=true).toList();
 String clientName(List<Map<String,dynamic>> cs,String? id)=>cs.where((e)=>'${e['id']}'=='${id??''}').map((e)=>'${e['name']}').firstOrNull??'Sin cliente';
 
@@ -128,7 +134,7 @@ class _DashboardPageState extends State<DashboardPage>{
   double get balanceToOwner=>shippingOwnerDue+orderOwnerDue-remittancesLiquidated-settled;
   double get shippingMargin=>shippingClient-shippingOwnerDue;
   double get orderMargin=>orders.fold(0,(a,e)=>a+(numv(e['clientTotal'])-numv(e['storeCost'])));
-  double get remitMargin=>remittances.fold(0,(a,e)=>a+(remittanceReturned(e)-numv(e['cupAmount'])));
+  double get remitMargin=>remittances.fold(0,(a,e)=>a+remittanceAgentMargin(e));
   @override Widget build(BuildContext context){
     if(loading)return const Scaffold(body:Center(child:CircularProgressIndicator()));
     return Scaffold(
@@ -266,19 +272,31 @@ class _RemittancesPageState extends State<RemittancesPage>{
   List<Map<String,dynamic>>rows=[],clients=[];@override void initState(){super.initState();load();}
   Future<void>load()async{final r=await Future.wait([Store.list('remittances'),Store.list('clients')]);rows=active(r[0]);clients=active(r[1]);if(mounted)setState((){});}
   Future<void>edit([Map<String,dynamic>?e])async{
+    final s=await Store.settings();
+    final threshold=numv(e?['appliedThreshold']??s['remittanceThreshold'])>0?numv(e?['appliedThreshold']??s['remittanceThreshold']):100.0;
+    final flatFee=numv(e?['appliedFlatFee']??s['remittanceFlatFee']);
+    final shareRaw=numv(e?['appliedAgentSharePct']??s['remittanceAgentSharePct']);
+    final sharePct=shareRaw.clamp(0,100).toDouble();
     String? cid=e?['clientId']?.toString();final beneficiary=TextEditingController(text:'${e?['beneficiary']??''}'),phone=TextEditingController(text:'${e?['beneficiaryPhone']??''}'),clientTotal=TextEditingController(text:'${e?['clientTotal']??''}'),returned=TextEditingController(text:'${e?['returnedToAlasCargo']??e?['ownerDue']??''}'),cup=TextEditingController(text:'${e?['cupAmount']??''}'),notes=TextEditingController(text:'${e?['notes']??''}');String status='${e?['status']??'Pendiente'}';
+    double gross(){final delivered=numv(cup.text);if(delivered<=0)return 0;return delivered<threshold?flatFee:numv(clientTotal.text)-delivered;}
+    double agentMargin()=>gross()*sharePct/100.0;
+    double alasMargin()=>gross()-agentMargin();
     final ok=await showDialog<bool>(context:context,builder:(_)=>StatefulBuilder(builder:(context,setD)=>AlertDialog(title:Text(e==null?'Nueva remesa':'Editar remesa'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
       DropdownButtonFormField<String>(value:cid,decoration:const InputDecoration(labelText:'Cliente / remitente *'),items:clients.map((c)=>DropdownMenuItem(value:'${c['id']}',child:Text('${c['name']}'))).toList(),onChanged:(v)=>setD(()=>cid=v)),const SizedBox(height:8),
       TextField(controller:beneficiary,decoration:const InputDecoration(labelText:'Beneficiario en Cuba *')),const SizedBox(height:8),TextField(controller:phone,decoration:const InputDecoration(labelText:'Teléfono del beneficiario')),const SizedBox(height:8),
-      TextField(controller:clientTotal,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Total cobrado al cliente (USD)')),const SizedBox(height:8),
-      TextField(controller:returned,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Dinero devuelto a Alas Cargo (USD)')),const SizedBox(height:8),
-      TextField(controller:cup,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Monto a entregar en Cuba (opcional)')),const SizedBox(height:8),
+      TextField(controller:cup,onChanged:(v){final delivered=numv(v);if(delivered>0&&delivered<threshold){clientTotal.text=(delivered+flatFee).toStringAsFixed(2);}setD((){});},keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Monto entregado en Cuba (USD)')),const SizedBox(height:8),
+      TextField(controller:clientTotal,onChanged:(_)=>setD((){}),keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Total recibido / cobrado (USD)')),const SizedBox(height:8),
+      TextField(controller:returned,onChanged:(_)=>setD((){}),keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Dinero devuelto a Alas Cargo (USD)')),const SizedBox(height:8),
+      InputDecorator(decoration:const InputDecoration(labelText:'Regla aplicada'),child:Text(numv(cup.text)>0&&numv(cup.text)<threshold?'Tarifa fija ${money(flatFee)} por debajo de ${money(threshold)}':'Diferencia entre recibido y entregado')),const SizedBox(height:8),
+      InputDecorator(decoration:const InputDecoration(labelText:'Ganancia bruta de la remesa'),child:Text(money(gross()))),const SizedBox(height:8),
+      InputDecorator(decoration:InputDecoration(labelText:'Margen del agente (${sharePct.toStringAsFixed(1)}%)'),child:Text(money(agentMargin()))),const SizedBox(height:8),
+      InputDecorator(decoration:const InputDecoration(labelText:'Margen de Alas Cargo'),child:Text(money(alasMargin()))),const SizedBox(height:8),
       DropdownButtonFormField<String>(value:status,decoration:const InputDecoration(labelText:'Estado'),items:['Pendiente','En proceso','Enviada','Entregada','Cancelada'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v)=>setD(()=>status=v??status)),const SizedBox(height:8),
       TextField(controller:notes,maxLines:2,decoration:const InputDecoration(labelText:'Notas')),
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('Cancelar')),FilledButton(onPressed:()=>Navigator.pop(context,true),child:const Text('Guardar'))])));
-    if(ok==true&&cid!=null&&beneficiary.text.trim().isNotEmpty){final all=await Store.list('remittances');final item={'id':e?['id']??newId(),'clientId':cid,'beneficiary':beneficiary.text.trim(),'beneficiaryPhone':phone.text.trim(),'clientTotal':numv(clientTotal.text),'returnedToAlasCargo':numv(returned.text),'ownerDue':numv(returned.text),'cupAmount':numv(cup.text),'status':status,'notes':notes.text.trim(),'date':e?['date']??today(),'deleted':false};final i=all.indexWhere((x)=>x['id']==item['id']);if(i>=0)all[i]={...all[i],...item};else all.add(item);await Store.save('remittances',all);load();}
+    if(ok==true&&cid!=null&&beneficiary.text.trim().isNotEmpty){final all=await Store.list('remittances');final item={'id':e?['id']??newId(),'clientId':cid,'beneficiary':beneficiary.text.trim(),'beneficiaryPhone':phone.text.trim(),'clientTotal':numv(clientTotal.text),'returnedToAlasCargo':numv(returned.text),'ownerDue':numv(returned.text),'cupAmount':numv(cup.text),'grossProfit':gross(),'agentMargin':agentMargin(),'alasCargoMargin':alasMargin(),'appliedThreshold':threshold,'appliedFlatFee':flatFee,'appliedAgentSharePct':sharePct,'pricingRule':numv(cup.text)>0&&numv(cup.text)<threshold?'flat':'difference','status':status,'notes':notes.text.trim(),'date':e?['date']??today(),'deleted':false};final i=all.indexWhere((x)=>x['id']==item['id']);if(i>=0)all[i]={...all[i],...item};else all.add(item);await Store.save('remittances',all);load();}
   }
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Remesas')),body:rows.isEmpty?const Center(child:Text('No hay remesas.')):ListView.builder(itemCount:rows.length,itemBuilder:(_,i){final e=rows[i];return ListTile(leading:const Icon(Icons.send),title:Text('${clientName(clients,'${e['clientId']}')} → ${e['beneficiary']}'),subtitle:Text('Cliente: ${money(numv(e['clientTotal']))} · Devuelto: ${money(remittanceReturned(e))}\n${e['status']}'),isThreeLine:true,onTap:()=>edit(e),trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()async{if(await confirmDelete(context)){await softDelete('remittances','${e['id']}');load();}}));}),floatingActionButton:FloatingActionButton.extended(onPressed:()=>edit(),icon:const Icon(Icons.add),label:const Text('Remesa')));
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Remesas')),body:rows.isEmpty?const Center(child:Text('No hay remesas.')):ListView.builder(itemCount:rows.length,itemBuilder:(_,i){final e=rows[i];return ListTile(leading:const Icon(Icons.send),title:Text('${clientName(clients,'${e['clientId']}')} → ${e['beneficiary']}'),subtitle:Text('Recibido: ${money(numv(e['clientTotal']))} · Cuba: ${money(numv(e['cupAmount']))}\nMargen agente: ${money(remittanceAgentMargin(e))} · ${e['status']}'),isThreeLine:true,onTap:()=>edit(e),trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()async{if(await confirmDelete(context)){await softDelete('remittances','${e['id']}');load();}}));}),floatingActionButton:FloatingActionButton.extended(onPressed:()=>edit(),icon:const Icon(Icons.add),label:const Text('Remesa')));
 }
 
 class SettlementsPage extends StatefulWidget{const SettlementsPage({super.key});@override State<SettlementsPage> createState()=>_SettlementsPageState();}
@@ -293,21 +311,21 @@ class _ReportPageState extends State<ReportPage>{
   bool busy=false;
   Future<Map<String,dynamic>>data()async{
     final r=await Future.wait([Store.settings(),Store.list('clients'),Store.list('orders'),Store.list('packages'),Store.list('remittances'),Store.list('settlements')]);
-    final orders=active(r[2] as List<Map<String,dynamic>>).map((e)=>{...e,'ownerDue':numv(e['storeCost'])}).toList();final remittances=active(r[4] as List<Map<String,dynamic>>).map((e)=>{...e,'returnedToAlasCargo':remittanceReturned(e),'ownerDue':remittanceReturned(e)}).toList();return {'settings':r[0],'clients':active(r[1] as List<Map<String,dynamic>>),'orders':orders,'packages':active(r[3] as List<Map<String,dynamic>>),'remittances':remittances,'settlements':active(r[5] as List<Map<String,dynamic>>),'generatedAt':DateTime.now().toIso8601String(),'schema':'alas-cargo-agent-v3'};
+    final orders=active(r[2] as List<Map<String,dynamic>>).map((e)=>{...e,'ownerDue':numv(e['storeCost'])}).toList();final remittances=active(r[4] as List<Map<String,dynamic>>).map((e)=>{...e,'returnedToAlasCargo':remittanceReturned(e),'ownerDue':remittanceReturned(e)}).toList();return {'settings':r[0],'clients':active(r[1] as List<Map<String,dynamic>>),'orders':orders,'packages':active(r[3] as List<Map<String,dynamic>>),'remittances':remittances,'settlements':active(r[5] as List<Map<String,dynamic>>),'generatedAt':DateTime.now().toIso8601String(),'schema':'alas-cargo-agent-v4'};
   }
   Future<void>shareReport()async{
     setState(()=>busy=true);try{
       final d=await data(),s=d['settings'] as Map<String,dynamic>,packages=d['packages'] as List<Map<String,dynamic>>,orders=d['orders'] as List<Map<String,dynamic>>,rem=d['remittances'] as List<Map<String,dynamic>>,sett=d['settlements'] as List<Map<String,dynamic>>,clients=d['clients'] as List<Map<String,dynamic>>;
-      final ship=packages.fold<double>(0,(a,e)=>a+numv(e['weightLb'])*alasCargoRatePerLb),ord=orders.fold<double>(0,(a,e)=>a+numv(e['storeCost'])),rr=rem.fold<double>(0,(a,e)=>a+remittanceReturned(e)),paid=sett.fold<double>(0,(a,e)=>a+numv(e['amount'])),remMargin=rem.fold<double>(0,(a,e)=>a+remittanceReturned(e)-numv(e['cupAmount']));
+      final ship=packages.fold<double>(0,(a,e)=>a+numv(e['weightLb'])*alasCargoRatePerLb),ord=orders.fold<double>(0,(a,e)=>a+numv(e['storeCost'])),rr=rem.fold<double>(0,(a,e)=>a+remittanceReturned(e)),paid=sett.fold<double>(0,(a,e)=>a+numv(e['amount'])),remGross=rem.fold<double>(0,(a,e)=>a+remittanceGrossProfit(e)),remAgent=rem.fold<double>(0,(a,e)=>a+remittanceAgentMargin(e)),remAlas=rem.fold<double>(0,(a,e)=>a+remittanceAlasMargin(e));
       final pdf=pw.Document();pdf.addPage(pw.MultiPage(pageFormat:PdfPageFormat.letter,build:(_)=>[
         pw.Text('ALAS CARGO - REPORTE DE AGENTE',style:pw.TextStyle(fontSize:20,fontWeight:pw.FontWeight.bold)),
         pw.SizedBox(height:8),pw.Text('Agente: ${s['agentName']}'),pw.Text('Telefono: ${s['phone']}'),pw.Text('Fecha: ${today()}'),
         pw.SizedBox(height:12),pw.Text('RESUMEN',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),pw.Text('Clientes: ${clients.length}'),pw.Text('Pedidos: ${orders.length}'),pw.Text('Paquetes: ${packages.length}'),pw.Text('Remesas: ${rem.length}'),
-        pw.SizedBox(height:8),pw.Text('Libras a liquidar: ${money(ship)}'),pw.Text('Pedidos a liquidar: ${money(ord)}'),pw.Text('Remesas liquidadas: ${money(rr)}'),pw.Text('Margen por remesas: ${money(remMargin)}'),pw.Text('Pagado: ${money(paid)}'),pw.Text('SALDO CON ALAS CARGO: ${money(ship+ord-rr-paid)}',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),
+        pw.SizedBox(height:8),pw.Text('Libras a liquidar: ${money(ship)}'),pw.Text('Pedidos a liquidar: ${money(ord)}'),pw.Text('Remesas liquidadas: ${money(rr)}'),pw.Text('Ganancia bruta remesas: ${money(remGross)}'),pw.Text('Margen agente remesas: ${money(remAgent)}'),pw.Text('Margen Alas Cargo remesas: ${money(remAlas)}'),pw.Text('Pagado: ${money(paid)}'),pw.Text('SALDO CON ALAS CARGO: ${money(ship+ord-rr-paid)}',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),
         pw.SizedBox(height:14),pw.Text('PAQUETES',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),
         ...packages.map((e)=>pw.Text('${e['tracking']} · ${clientName(clients,'${e['clientId']}')} · ${numv(e['weightLb']).toStringAsFixed(1)} lb · Alas Cargo ${money(numv(e['weightLb'])*alasCargoRatePerLb)}')),
         pw.SizedBox(height:14),pw.Text('REMESAS',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),
-        ...rem.map((e)=>pw.Text('${clientName(clients,'${e['clientId']}')} → ${e['beneficiary']} · Devuelto ${money(remittanceReturned(e))} · Entregado Cuba ${money(numv(e['cupAmount']))} · Margen ${money(remittanceReturned(e)-numv(e['cupAmount']))} · ${e['status']}')),
+        ...rem.map((e)=>pw.Text('${clientName(clients,'${e['clientId']}')} → ${e['beneficiary']} · Recibido ${money(numv(e['clientTotal']))} · Cuba ${money(numv(e['cupAmount']))} · Ganancia ${money(remittanceGrossProfit(e))} · Agente ${money(remittanceAgentMargin(e))} · Alas Cargo ${money(remittanceAlasMargin(e))} · ${e['status']}')),
       ]));
       final dir=await getTemporaryDirectory(),pdfFile=File('${dir.path}/Reporte_Agente_${today()}.pdf'),jsonFile=File('${dir.path}/Reporte_Agente_${today()}.json');
       await pdfFile.writeAsBytes(await pdf.save());await jsonFile.writeAsString(const JsonEncoder.withIndent('  ').convert(d));
@@ -318,14 +336,19 @@ class _ReportPageState extends State<ReportPage>{
 
 class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@override State<SettingsPage> createState()=>_SettingsPageState();}
 class _SettingsPageState extends State<SettingsPage>{
-  final name=TextEditingController(),phone=TextEditingController(),rate=TextEditingController();bool loading=true;
-  @override void initState(){super.initState();load();}Future<void>load()async{final s=await Store.settings();name.text='${s['agentName']}';phone.text='${s['phone']}';rate.text='${s['defaultClientRate']}';if(mounted)setState(()=>loading=false);}
-  Future<void>save()async{final s=await Store.settings();s['agentName']=name.text.trim();s['phone']=phone.text.trim();s['defaultClientRate']=numv(rate.text);await Store.saveSettings(s);if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Configuración guardada.')));}
+  final name=TextEditingController(),phone=TextEditingController(),rate=TextEditingController(),remitThreshold=TextEditingController(),remitFlatFee=TextEditingController(),remitShare=TextEditingController();bool loading=true;
+  @override void initState(){super.initState();load();}Future<void>load()async{final s=await Store.settings();name.text='${s['agentName']}';phone.text='${s['phone']}';rate.text='${s['defaultClientRate']}';remitThreshold.text='${s['remittanceThreshold']??100.0}';remitFlatFee.text='${s['remittanceFlatFee']??10.0}';remitShare.text='${s['remittanceAgentSharePct']??100.0}';if(mounted)setState(()=>loading=false);}
+  Future<void>save()async{final s=await Store.settings();s['agentName']=name.text.trim();s['phone']=phone.text.trim();s['defaultClientRate']=numv(rate.text);s['remittanceThreshold']=numv(remitThreshold.text)>0?numv(remitThreshold.text):100.0;s['remittanceFlatFee']=numv(remitFlatFee.text);s['remittanceAgentSharePct']=numv(remitShare.text).clamp(0,100).toDouble();await Store.saveSettings(s);if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Configuración guardada.')));}
   @override Widget build(BuildContext context){if(loading)return const Scaffold(body:Center(child:CircularProgressIndicator()));return Scaffold(appBar:AppBar(title:const Text('Perfil del agente')),body:ListView(padding:const EdgeInsets.all(16),children:[
     TextField(controller:name,decoration:const InputDecoration(labelText:'Nombre del agente')),const SizedBox(height:12),TextField(controller:phone,decoration:const InputDecoration(labelText:'Teléfono')),const SizedBox(height:12),
     TextField(controller:rate,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Tarifa predeterminada que cobras a tus clientes por lb')),const SizedBox(height:12),
     InputDecorator(decoration:const InputDecoration(labelText:'Tarifa fija para Alas Cargo'),child:Text('${money(alasCargoRatePerLb)} / lb')),const SizedBox(height:8),
     const Text('La tarifa de Alas Cargo no se descuenta de tu tarifa: se calcula por separado. Si cobras más de \$5/lb, la diferencia queda como margen del agente.'),const SizedBox(height:18),
+    Text('Ajustes de remesas',style:Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight:FontWeight.bold)),const SizedBox(height:10),
+    TextField(controller:remitThreshold,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Límite para tarifa fija (USD)')),const SizedBox(height:10),
+    TextField(controller:remitFlatFee,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Tarifa fija por debajo del límite (USD)')),const SizedBox(height:10),
+    TextField(controller:remitShare,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Porcentaje de ganancia para el agente (%)')),const SizedBox(height:8),
+    const Text('Por debajo del límite se usa la tarifa fija. Desde el límite en adelante, la ganancia bruta es recibido menos entregado en Cuba. Luego esa ganancia se reparte según el porcentaje del agente.'),const SizedBox(height:18),
     FilledButton.icon(onPressed:save,icon:const Icon(Icons.save),label:const Text('Guardar')),
   ]));}
 }
