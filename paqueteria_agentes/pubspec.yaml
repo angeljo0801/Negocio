@@ -1,7 +1,7 @@
 name: paqueteria_agentes
 publish_to: 'none'
 description: Aplicacion auxiliar para agentes de Alas Cargo.
-version: 1.2.0+3
+version: 1.3.0+4
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
