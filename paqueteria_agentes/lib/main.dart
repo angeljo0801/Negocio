@@ -128,7 +128,7 @@ class _DashboardPageState extends State<DashboardPage>{
   double get balanceToOwner=>shippingOwnerDue+orderOwnerDue-remittancesLiquidated-settled;
   double get shippingMargin=>shippingClient-shippingOwnerDue;
   double get orderMargin=>orders.fold(0,(a,e)=>a+(numv(e['clientTotal'])-numv(e['storeCost'])));
-  double get remitMargin=>remittances.fold(0,(a,e)=>a+(numv(e['clientTotal'])-remittanceReturned(e)));
+  double get remitMargin=>remittances.fold(0,(a,e)=>a+(remittanceReturned(e)-numv(e['cupAmount'])));
   @override Widget build(BuildContext context){
     if(loading)return const Scaffold(body:Center(child:CircularProgressIndicator()));
     return Scaffold(
@@ -298,16 +298,16 @@ class _ReportPageState extends State<ReportPage>{
   Future<void>shareReport()async{
     setState(()=>busy=true);try{
       final d=await data(),s=d['settings'] as Map<String,dynamic>,packages=d['packages'] as List<Map<String,dynamic>>,orders=d['orders'] as List<Map<String,dynamic>>,rem=d['remittances'] as List<Map<String,dynamic>>,sett=d['settlements'] as List<Map<String,dynamic>>,clients=d['clients'] as List<Map<String,dynamic>>;
-      final ship=packages.fold<double>(0,(a,e)=>a+numv(e['weightLb'])*alasCargoRatePerLb),ord=orders.fold<double>(0,(a,e)=>a+numv(e['storeCost'])),rr=rem.fold<double>(0,(a,e)=>a+remittanceReturned(e)),paid=sett.fold<double>(0,(a,e)=>a+numv(e['amount']));
+      final ship=packages.fold<double>(0,(a,e)=>a+numv(e['weightLb'])*alasCargoRatePerLb),ord=orders.fold<double>(0,(a,e)=>a+numv(e['storeCost'])),rr=rem.fold<double>(0,(a,e)=>a+remittanceReturned(e)),paid=sett.fold<double>(0,(a,e)=>a+numv(e['amount'])),remMargin=rem.fold<double>(0,(a,e)=>a+remittanceReturned(e)-numv(e['cupAmount']));
       final pdf=pw.Document();pdf.addPage(pw.MultiPage(pageFormat:PdfPageFormat.letter,build:(_)=>[
         pw.Text('ALAS CARGO - REPORTE DE AGENTE',style:pw.TextStyle(fontSize:20,fontWeight:pw.FontWeight.bold)),
         pw.SizedBox(height:8),pw.Text('Agente: ${s['agentName']}'),pw.Text('Telefono: ${s['phone']}'),pw.Text('Fecha: ${today()}'),
         pw.SizedBox(height:12),pw.Text('RESUMEN',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),pw.Text('Clientes: ${clients.length}'),pw.Text('Pedidos: ${orders.length}'),pw.Text('Paquetes: ${packages.length}'),pw.Text('Remesas: ${rem.length}'),
-        pw.SizedBox(height:8),pw.Text('Libras a liquidar: ${money(ship)}'),pw.Text('Pedidos a liquidar: ${money(ord)}'),pw.Text('Remesas liquidadas: ${money(rr)}'),pw.Text('Pagado: ${money(paid)}'),pw.Text('SALDO CON ALAS CARGO: ${money(ship+ord-rr-paid)}',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),
+        pw.SizedBox(height:8),pw.Text('Libras a liquidar: ${money(ship)}'),pw.Text('Pedidos a liquidar: ${money(ord)}'),pw.Text('Remesas liquidadas: ${money(rr)}'),pw.Text('Margen por remesas: ${money(remMargin)}'),pw.Text('Pagado: ${money(paid)}'),pw.Text('SALDO CON ALAS CARGO: ${money(ship+ord-rr-paid)}',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),
         pw.SizedBox(height:14),pw.Text('PAQUETES',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),
         ...packages.map((e)=>pw.Text('${e['tracking']} · ${clientName(clients,'${e['clientId']}')} · ${numv(e['weightLb']).toStringAsFixed(1)} lb · Alas Cargo ${money(numv(e['weightLb'])*alasCargoRatePerLb)}')),
         pw.SizedBox(height:14),pw.Text('REMESAS',style:pw.TextStyle(fontWeight:pw.FontWeight.bold)),
-        ...rem.map((e)=>pw.Text('${clientName(clients,'${e['clientId']}')} → ${e['beneficiary']} · Devuelto a Alas Cargo ${money(remittanceReturned(e))} · ${e['status']}')),
+        ...rem.map((e)=>pw.Text('${clientName(clients,'${e['clientId']}')} → ${e['beneficiary']} · Devuelto ${money(remittanceReturned(e))} · Entregado Cuba ${money(numv(e['cupAmount']))} · Margen ${money(remittanceReturned(e)-numv(e['cupAmount']))} · ${e['status']}')),
       ]));
       final dir=await getTemporaryDirectory(),pdfFile=File('${dir.path}/Reporte_Agente_${today()}.pdf'),jsonFile=File('${dir.path}/Reporte_Agente_${today()}.json');
       await pdfFile.writeAsBytes(await pdf.save());await jsonFile.writeAsString(const JsonEncoder.withIndent('  ').convert(d));
