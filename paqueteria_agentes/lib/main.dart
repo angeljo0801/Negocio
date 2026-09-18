@@ -121,12 +121,12 @@ class _DashboardPageState extends State<DashboardPage>{
   }
   double get shippingOwnerDue=>packages.fold(0,(a,e)=>a+numv(e['weightLb'])*alasCargoRatePerLb);
   double get shippingClient=>packages.fold(0,(a,e)=>a+numv(e['weightLb'])*numv(e['clientRate']));
-  double get orderOwnerDue=>orders.fold(0,(a,e)=>a+numv(e['ownerDue']));
+  double get orderOwnerDue=>orders.fold(0,(a,e)=>a+numv(e['storeCost']));
   double get remitOwnerDue=>remittances.fold(0,(a,e)=>a+numv(e['ownerDue']));
   double get settled=>settlements.fold(0,(a,e)=>a+numv(e['amount']));
   double get balanceToOwner=>shippingOwnerDue+orderOwnerDue+remitOwnerDue-settled;
   double get shippingMargin=>shippingClient-shippingOwnerDue;
-  double get orderMargin=>orders.fold(0,(a,e)=>a+(numv(e['clientTotal'])-numv(e['storeCost'])-numv(e['ownerDue'])));
+  double get orderMargin=>orders.fold(0,(a,e)=>a+(numv(e['clientTotal'])-numv(e['ownerDue'])));
   double get remitMargin=>remittances.fold(0,(a,e)=>a+(numv(e['clientTotal'])-numv(e['ownerDue'])));
   @override Widget build(BuildContext context){
     if(loading)return const Scaffold(body:Center(child:CircularProgressIndicator()));
@@ -154,7 +154,7 @@ class _DashboardPageState extends State<DashboardPage>{
         Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           Text('Cuenta con Alas Cargo',style:Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight:FontWeight.bold)),
           const SizedBox(height:8),
-          Text('Envíos a Alas Cargo: ${money(shippingOwnerDue)}'),
+          Text('Libras a liquidar: ${money(shippingOwnerDue)}'),
           Text('Pedidos a liquidar: ${money(orderOwnerDue)}'),
           Text('Remesas a liquidar: ${money(remitOwnerDue)}'),
           Text('Pagado a Alas Cargo: ${money(settled)}'),
@@ -211,16 +211,16 @@ class _OrdersPageState extends State<OrdersPage>{
   List<Map<String,dynamic>>rows=[],clients=[];@override void initState(){super.initState();load();}
   Future<void>load()async{final r=await Future.wait([Store.list('orders'),Store.list('clients')]);rows=active(r[0]);clients=active(r[1]);if(mounted)setState((){});}
   Future<void>edit([Map<String,dynamic>?e])async{
-    String? cid=e?['clientId']?.toString();final store=TextEditingController(text:'${e?['store']??''}'),desc=TextEditingController(text:'${e?['description']??''}'),cost=TextEditingController(text:'${e?['storeCost']??''}'),total=TextEditingController(text:'${e?['clientTotal']??''}'),owner=TextEditingController(text:'${e?['ownerDue']??0}');String status='${e?['status']??'Pendiente'}';
+    String? cid=e?['clientId']?.toString();final store=TextEditingController(text:'${e?['store']??''}'),desc=TextEditingController(text:'${e?['description']??''}'),cost=TextEditingController(text:'${e?['storeCost']??''}'),total=TextEditingController(text:'${e?['clientTotal']??''}');final owner=TextEditingController(text:'${e?['storeCost']??e?['ownerDue']??0}');String status='${e?['status']??'Pendiente'}';
     final ok=await showDialog<bool>(context:context,builder:(_)=>StatefulBuilder(builder:(context,setD)=>AlertDialog(title:Text(e==null?'Nuevo pedido':'Editar pedido'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
       DropdownButtonFormField<String>(value:cid,decoration:const InputDecoration(labelText:'Cliente *'),items:clients.map((c)=>DropdownMenuItem(value:'${c['id']}',child:Text('${c['name']}'))).toList(),onChanged:(v)=>setD(()=>cid=v)),const SizedBox(height:8),
       TextField(controller:store,decoration:const InputDecoration(labelText:'Tienda')),const SizedBox(height:8),TextField(controller:desc,maxLines:2,decoration:const InputDecoration(labelText:'Descripción / artículos')),const SizedBox(height:8),
-      TextField(controller:cost,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Costo real de compra')),const SizedBox(height:8),
-      TextField(controller:total,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Total cobrado al cliente')),const SizedBox(height:8),
-      TextField(controller:owner,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Monto a liquidar con Alas Cargo (si aplica)')),const SizedBox(height:8),
+      TextField(controller:cost,onChanged:(v)=>setD(()=>owner.text=numv(v).toStringAsFixed(2)),keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Costo real de compra (pagado por Alas Cargo)')),const SizedBox(height:8),
+      TextField(controller:total,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Total cobrado o a cobrar al cliente')),const SizedBox(height:8),
+      InputDecorator(decoration:const InputDecoration(labelText:'Monto a liquidar con Alas Cargo'),child:Text(money(numv(owner.text)))),const SizedBox(height:8),
       DropdownButtonFormField<String>(value:status,decoration:const InputDecoration(labelText:'Estado'),items:['Pendiente','Comprado','Recibido','Entregado','Cancelado'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:(v)=>setD(()=>status=v??status)),
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(context,false),child:const Text('Cancelar')),FilledButton(onPressed:()=>Navigator.pop(context,true),child:const Text('Guardar'))])));
-    if(ok==true&&cid!=null){final all=await Store.list('orders');final item={'id':e?['id']??newId(),'clientId':cid,'store':store.text.trim(),'description':desc.text.trim(),'storeCost':numv(cost.text),'clientTotal':numv(total.text),'ownerDue':numv(owner.text),'status':status,'date':e?['date']??today(),'deleted':false};final i=all.indexWhere((x)=>x['id']==item['id']);if(i>=0)all[i]={...all[i],...item};else all.add(item);await Store.save('orders',all);load();}
+    if(ok==true&&cid!=null){final all=await Store.list('orders');final item={'id':e?['id']??newId(),'clientId':cid,'store':store.text.trim(),'description':desc.text.trim(),'storeCost':numv(cost.text),'clientTotal':numv(total.text),'ownerDue':numv(cost.text),'status':status,'date':e?['date']??today(),'deleted':false};final i=all.indexWhere((x)=>x['id']==item['id']);if(i>=0)all[i]={...all[i],...item};else all.add(item);await Store.save('orders',all);load();}
   }
   @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Pedidos y compras')),body:rows.isEmpty?const Center(child:Text('No hay pedidos.')):ListView.builder(itemCount:rows.length,itemBuilder:(_,i){final e=rows[i];return ListTile(
     leading:const Icon(Icons.shopping_bag),title:Text('${clientName(clients,'${e['clientId']}')} · ${e['store']}'),subtitle:Text('${e['description']}\nTotal cliente: ${money(numv(e['clientTotal']))} · ${e['status']}'),isThreeLine:true,onTap:()=>edit(e),
@@ -292,12 +292,12 @@ class _ReportPageState extends State<ReportPage>{
   bool busy=false;
   Future<Map<String,dynamic>>data()async{
     final r=await Future.wait([Store.settings(),Store.list('clients'),Store.list('orders'),Store.list('packages'),Store.list('remittances'),Store.list('settlements')]);
-    return {'settings':r[0],'clients':active(r[1] as List<Map<String,dynamic>>),'orders':active(r[2] as List<Map<String,dynamic>>),'packages':active(r[3] as List<Map<String,dynamic>>),'remittances':active(r[4] as List<Map<String,dynamic>>),'settlements':active(r[5] as List<Map<String,dynamic>>),'generatedAt':DateTime.now().toIso8601String(),'schema':'alas-cargo-agent-v1'};
+    final orders=active(r[2] as List<Map<String,dynamic>>).map((e)=>{...e,'ownerDue':numv(e['storeCost'])}).toList();return {'settings':r[0],'clients':active(r[1] as List<Map<String,dynamic>>),'orders':orders,'packages':active(r[3] as List<Map<String,dynamic>>),'remittances':active(r[4] as List<Map<String,dynamic>>),'settlements':active(r[5] as List<Map<String,dynamic>>),'generatedAt':DateTime.now().toIso8601String(),'schema':'alas-cargo-agent-v2'};
   }
   Future<void>shareReport()async{
     setState(()=>busy=true);try{
       final d=await data(),s=d['settings'] as Map<String,dynamic>,packages=d['packages'] as List<Map<String,dynamic>>,orders=d['orders'] as List<Map<String,dynamic>>,rem=d['remittances'] as List<Map<String,dynamic>>,sett=d['settlements'] as List<Map<String,dynamic>>,clients=d['clients'] as List<Map<String,dynamic>>;
-      final ship=packages.fold<double>(0,(a,e)=>a+numv(e['weightLb'])*alasCargoRatePerLb),ord=orders.fold<double>(0,(a,e)=>a+numv(e['ownerDue'])),rr=rem.fold<double>(0,(a,e)=>a+numv(e['ownerDue'])),paid=sett.fold<double>(0,(a,e)=>a+numv(e['amount']));
+      final ship=packages.fold<double>(0,(a,e)=>a+numv(e['weightLb'])*alasCargoRatePerLb),ord=orders.fold<double>(0,(a,e)=>a+numv(e['storeCost'])),rr=rem.fold<double>(0,(a,e)=>a+numv(e['ownerDue'])),paid=sett.fold<double>(0,(a,e)=>a+numv(e['amount']));
       final pdf=pw.Document();pdf.addPage(pw.MultiPage(pageFormat:PdfPageFormat.letter,build:(_)=>[
         pw.Text('ALAS CARGO - REPORTE DE AGENTE',style:pw.TextStyle(fontSize:20,fontWeight:pw.FontWeight.bold)),
         pw.SizedBox(height:8),pw.Text('Agente: ${s['agentName']}'),pw.Text('Telefono: ${s['phone']}'),pw.Text('Fecha: ${today()}'),
