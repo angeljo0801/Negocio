@@ -159,8 +159,8 @@ jobs:
               "'flightWatches':'Alertas de vuelos','agencyShipments':'Envíos por agencia','agents':'Agentes','agentReports':'Informes de agentes'};"
           )
           ex = ex.replace(
-              "_more(context,Icons.badge_outlined,'Agentes','Crear agentes e importar sus informes',const AgentsPage()),\n_more(context,Icons.flight_takeoff,'Vuelos y alertas'",
-              "_more(context,Icons.local_shipping,'Envíos por agencia','Javier u otras agencias, costos y rentabilidad',const AgencyShipmentsPage()),\n_more(context,Icons.flight_takeoff,'Vuelos y alertas'"
+              "_more(context,Icons.flight_takeoff,'Vuelos y alertas'",
+              "_more(context,Icons.local_shipping,'Envíos por agencia','Javier u otras agencias, costos y rentabilidad',const AgencyShipmentsPage()),\n_more(context,Icons.badge_outlined,'Agentes','Crear agentes e importar sus informes',const AgentsPage()),\n_more(context,Icons.flight_takeoff,'Vuelos y alertas'"
           )
           extras.write_text(ex)
 
@@ -248,5 +248,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Paqueteria-APK
-          path: Paqueteria-v1.4.apk
+          path: Paqueteria-v1.5.apk
           retention-days: 30
