@@ -1,0 +1,75 @@
+name: Build Paqueteria Agentes APK
+
+on:
+  push:
+    branches: ["paqueteria-v1"]
+    paths:
+      - "paqueteria_agentes/**"
+      - ".github/workflows/build-paqueteria-agentes.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install SVG converter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin
+
+      - name: Create Android scaffold
+        run: |
+          flutter create --platforms=android --org com.angelapps --project-name paqueteria_agentes app_agent
+          rm -rf app_agent/lib app_agent/test
+          cp -R paqueteria_agentes/lib app_agent/lib
+          cp paqueteria_agentes/pubspec.yaml app_agent/pubspec.yaml
+          mkdir -p app_agent/assets
+          rsvg-convert -w 1024 -h 1024 paqueteria_agentes/assets/icon.svg -o app_agent/assets/icon.png
+          sed -i 's/android:label="paqueteria_agentes"/android:label="Alas Cargo Agentes"/' app_agent/android/app/src/main/AndroidManifest.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("app_agent/android/app/src/main/AndroidManifest.xml")
+          s=p.read_text()
+          if "android.permission.CAMERA" not in s:
+              s=s.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">','<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.CAMERA" />')
+          p.write_text(s)
+          PY
+
+      - name: Get dependencies
+        working-directory: app_agent
+        run: flutter pub get
+
+      - name: Generate launcher icon
+        working-directory: app_agent
+        run: dart run flutter_launcher_icons
+
+      - name: Analyze
+        working-directory: app_agent
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+
+      - name: Build release APK
+        working-directory: app_agent
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: cp app_agent/build/app/outputs/flutter-apk/app-release.apk Paqueteria-Agentes-v1.0.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Paqueteria-Agentes-APK
+          path: Paqueteria-Agentes-v1.0.apk
+          retention-days: 30
