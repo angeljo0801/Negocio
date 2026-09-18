@@ -1,0 +1,33 @@
+name: paqueteria_agentes
+publish_to: 'none'
+description: Aplicacion auxiliar para agentes de Alas Cargo.
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.5.3
+  mobile_scanner: ^7.0.1
+  path_provider: ^2.1.5
+  pdf: ^3.11.3
+  share_plus: ^10.1.4
+  cross_file: ^0.3.4+2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon.png
+
+flutter_launcher_icons:
+  android: true
+  image_path: assets/icon.png
+  adaptive_icon_background: '#123B6D'
+  adaptive_icon_foreground: assets/icon.png
