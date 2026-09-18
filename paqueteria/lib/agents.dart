@@ -34,14 +34,23 @@ double agentOrdersDue(Map<String, dynamic>? report) =>
 double agentRemittancesLiquidated(Map<String, dynamic>? report) =>
     _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + number(e['returnedToAlasCargo'] ?? e['ownerDue']));
 
+double _agentRemittanceGross(Map<String, dynamic> e) =>
+    e.containsKey('grossProfit') ? number(e['grossProfit']) : number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount']);
+
+double _agentRemittanceAgentMargin(Map<String, dynamic> e) =>
+    e.containsKey('agentMargin') ? number(e['agentMargin']) : _agentRemittanceGross(e);
+
+double _agentRemittanceAlasMargin(Map<String, dynamic> e) =>
+    e.containsKey('alasCargoMargin') ? number(e['alasCargoMargin']) : _agentRemittanceGross(e) - _agentRemittanceAgentMargin(e);
+
 double agentRemittanceGrossProfit(Map<String, dynamic>? report) =>
-    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + (e.containsKey('grossProfit') ? number(e['grossProfit']) : number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount'])));
+    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + _agentRemittanceGross(e));
 
 double agentRemittanceMargin(Map<String, dynamic>? report) =>
-    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + (e.containsKey('agentMargin') ? number(e['agentMargin']) : (e.containsKey('grossProfit') ? number(e['grossProfit']) : number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount']))));
+    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + _agentRemittanceAgentMargin(e));
 
 double agentRemittanceAlasCargoMargin(Map<String, dynamic>? report) =>
-    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + (e.containsKey('alasCargoMargin') ? number(e['alasCargoMargin']) : ((e.containsKey('grossProfit') ? number(e['grossProfit']) : number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount'])) - (e.containsKey('agentMargin') ? number(e['agentMargin']) : (e.containsKey('grossProfit') ? number(e['grossProfit']) : number(e['returnedToAlasCargo'] ?? e['ownerDue']) - number(e['cupAmount']))))));
+    _reportList(_reportData(report), 'remittances').fold<double>(0, (sum, e) => sum + _agentRemittanceAlasMargin(e));
 
 double agentSettled(Map<String, dynamic>? report) =>
     _reportList(_reportData(report), 'settlements').fold<double>(0, (sum, e) => sum + number(e['amount']));
@@ -446,6 +455,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
     final remittances = _reportList(data, 'remittances');
     final settlements = _reportList(data, 'settlements');
     final clients = _reportList(data, 'clients');
+    final reportSettings = data['settings'] is Map ? Map<String, dynamic>.from(data['settings'] as Map) : <String, dynamic>{};
 
     return Scaffold(
       appBar: AppBar(title: Text('${agent!['name']}'), actions: [
@@ -474,6 +484,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
             Text('Paquetes: ${packages.length} · ${agentPackageWeight(latest).toStringAsFixed(1)} lb'),
             Text('Pedidos: ${orders.length}'),
             Text('Remesas: ${remittances.length}'),
+            if (reportSettings.isNotEmpty) Text('Regla remesas: < ${money(number(reportSettings['remittanceThreshold'] ?? 100))} = ${money(number(reportSettings['remittanceFlatFee'] ?? 10))} fijo · Agente ${number(reportSettings['remittanceAgentSharePct'] ?? 100).toStringAsFixed(1)}%'),
             const Divider(),
             Text('Libras a liquidar: ${money(agentShippingDue(latest))}'),
             Text('Pedidos a liquidar: ${money(agentOrdersDue(latest))}'),
@@ -517,7 +528,7 @@ class _AgentDetailPageState extends State<AgentDetailPage> {
               for (final e in remittances)
                 ListTile(
                   title: Text('${_agentClientName(data, e['clientId'])} → ${e['beneficiary'] ?? ''}'),
-                  subtitle: Text('Recibido: ${money(number(e['clientTotal']))} · Cuba: ${money(number(e['cupAmount']))}\nAgente: ${money(e.containsKey('agentMargin')?number(e['agentMargin']):0)} · Alas Cargo: ${money(e.containsKey('alasCargoMargin')?number(e['alasCargoMargin']):0)}'),
+                  subtitle: Text('Recibido: ${money(number(e['clientTotal']))} · Cuba: ${money(number(e['cupAmount']))}\nAgente: ${money(_agentRemittanceAgentMargin(e))} · Alas Cargo: ${money(_agentRemittanceAlasMargin(e))}'),
                   isThreeLine: true,
                   trailing: Text('Devuelto: ${money(number(e['returnedToAlasCargo'] ?? e['ownerDue']))}'),
                 ),
@@ -613,7 +624,7 @@ class AgentReportPage extends StatelessWidget {
           for (final e in remittances)
             ListTile(
               title: Text('${_agentClientName(data, e['clientId'])} → ${e['beneficiary'] ?? ''}'),
-              subtitle: Text('Recibido: ${money(number(e['clientTotal']))} · Cuba: ${money(number(e['cupAmount']))}\nAgente: ${money(e.containsKey('agentMargin')?number(e['agentMargin']):0)} · Alas Cargo: ${money(e.containsKey('alasCargoMargin')?number(e['alasCargoMargin']):0)}'),
+              subtitle: Text('Recibido: ${money(number(e['clientTotal']))} · Cuba: ${money(number(e['cupAmount']))}\nAgente: ${money(_agentRemittanceAgentMargin(e))} · Alas Cargo: ${money(_agentRemittanceAlasMargin(e))}'),
               isThreeLine: true,
               trailing: Text('Devuelto: ${money(number(e['returnedToAlasCargo'] ?? e['ownerDue']))}'),
             ),
