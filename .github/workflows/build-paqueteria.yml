@@ -156,10 +156,10 @@ jobs:
           )
           ex = ex.replace(
               "'flightWatches':'Alertas de vuelos'};",
-              "'flightWatches':'Alertas de vuelos','agencyShipments':'Envíos por agencia'};"
+              "'flightWatches':'Alertas de vuelos','agencyShipments':'Envíos por agencia','agents':'Agentes','agentReports':'Informes de agentes'};"
           )
           ex = ex.replace(
-              "_more(context,Icons.flight_takeoff,'Vuelos y alertas'",
+              "_more(context,Icons.badge_outlined,'Agentes','Crear agentes e importar sus informes',const AgentsPage()),\n_more(context,Icons.flight_takeoff,'Vuelos y alertas'",
               "_more(context,Icons.local_shipping,'Envíos por agencia','Javier u otras agencias, costos y rentabilidad',const AgencyShipmentsPage()),\n_more(context,Icons.flight_takeoff,'Vuelos y alertas'"
           )
           extras.write_text(ex)
@@ -242,7 +242,7 @@ jobs:
         run: test "$(cat build.exit)" = "0"
 
       - name: Rename APK
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.4.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.5.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
