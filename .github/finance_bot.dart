@@ -318,16 +318,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
       'Un cliente me pagó $120',
     ];
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Asistente financiero'),
-        actions: [
-          IconButton(
-            tooltip: 'Libro diario',
-            icon: const Icon(Icons.receipt_long_outlined),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => JournalPage(onChanged: widget.onChanged))),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Asistente financiero')),
       body: Column(
         children: [
           SizedBox(
