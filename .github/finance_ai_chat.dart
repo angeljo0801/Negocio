@@ -571,8 +571,12 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
 
   Future<void> _changeProvider(String? value) async {
     if (value == null || busy) return;
+    final previous = provider;
     final p = await SharedPreferences.getInstance();
     await p.setString('finance_ai_provider', value);
+    if (previous == 'device' && value != 'device') {
+      await FinanceAiService.releaseDeviceModel();
+    }
     if (mounted) setState(() => provider = value);
   }
 
@@ -603,6 +607,8 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
         return 'Online · ${p.getString('finance_ai_openai_model') ?? 'gpt-4.1-mini'}';
       case 'local':
         return 'Local · ${p.getString('finance_ai_local_model') ?? 'llama3.2:3b'}';
+      case 'manager':
+        return 'Local AI Manager · shared';
       case 'device':
         final path = p.getString('finance_ai_device_model_path') ?? '';
         return path.isEmpty ? 'GGUF · sin modelo' : 'GGUF · ${path.split('/').last}';
@@ -670,6 +676,10 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
                   DropdownMenuItem(
                     value: 'local',
                     child: Text('LLM local / Ollama'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'manager',
+                    child: Text('Local AI Manager'),
                   ),
                   DropdownMenuItem(
                     value: 'device',
