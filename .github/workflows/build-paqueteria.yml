@@ -182,7 +182,60 @@ jobs:
                   if f'android.permission.{perm}' not in m:
                       m = m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', f'<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.{perm}" />')
           m = m.replace('android:label="paqueteria"', 'android:label="Paquetería"')
+          sync_permission = 'com.angelapps.paqueteria.permission.FINANCE_SYNC'
+          if sync_permission not in m:
+              m = m.replace('<application', f'<permission android:name="{sync_permission}" android:protectionLevel="normal" />\n    <application', 1)
+          if 'FinanceSyncProvider' not in m:
+              provider = '''        <provider
+            android:name=".FinanceSyncProvider"
+            android:authorities="com.angelapps.paqueteria.finance_sync"
+            android:exported="true"
+            android:readPermission="com.angelapps.paqueteria.permission.FINANCE_SYNC"
+            android:grantUriPermissions="true" />
+'''
+              m = m.replace('    </application>', provider + '    </application>')
           manifest.write_text(m)
+
+          kotlin_dir = Path('app/android/app/src/main/kotlin/com/angelapps/paqueteria')
+          kotlin_dir.mkdir(parents=True, exist_ok=True)
+          (kotlin_dir / 'FinanceSyncProvider.kt').write_text(r'''package com.angelapps.paqueteria
+
+import android.content.ContentProvider
+import android.content.ContentValues
+import android.content.Context
+import android.database.Cursor
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import java.io.FileOutputStream
+
+class FinanceSyncProvider : ContentProvider() {
+    override fun onCreate(): Boolean = true
+
+    override fun getType(uri: Uri): String = "application/json"
+
+    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
+        val pipe = ParcelFileDescriptor.createPipe()
+        val prefs = context!!.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val snapshot = prefs.getString("flutter.finance_sync_snapshot", "{}") ?: "{}"
+        Thread {
+            try {
+                FileOutputStream(pipe[1].fileDescriptor).use { out ->
+                    out.write(snapshot.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                }
+            } finally {
+                try { pipe[1].close() } catch (_: Exception) {}
+            }
+        }.start()
+        return pipe[0]
+    }
+
+    override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
+    override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
+    override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0
+}
+''')
 
           gradle = Path('app/android/app/build.gradle.kts')
           g = gradle.read_text()
@@ -242,11 +295,11 @@ jobs:
         run: test "$(cat build.exit)" = "0"
 
       - name: Rename APK
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.9.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v2.0.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Paqueteria-APK
-          path: Paqueteria-v1.9.apk
+          path: Paqueteria-v2.0.apk
           retention-days: 30
