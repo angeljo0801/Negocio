@@ -71,6 +71,64 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
     return double.tryParse(raw ?? '');
   }
 
+
+  Future<String> _accountCatalog() async {
+    final d = await AppDatabase.instance.db;
+    final rows = await d.query(
+      'accounts',
+      columns: ['code', 'name', 'type', 'subtype'],
+      orderBy: 'code ASC',
+    );
+    return rows
+        .map(
+          (r) =>
+              r['code'].toString() +
+              '|' +
+              r['name'].toString() +
+              '|' +
+              r['type'].toString() +
+              '|' +
+              (r['subtype'] == null ? '' : r['subtype'].toString()),
+        )
+        .join('\n');
+  }
+
+  String _conversationContext() {
+    final start = messages.length > 10 ? messages.length - 10 : 0;
+    return messages
+        .sublist(start)
+        .map((m) => (m.fromUser ? 'USUARIO: ' : 'ASISTENTE: ') + m.text)
+        .join('\n');
+  }
+
+  Map<String, dynamic> _decodeAiObject(String raw) {
+    var value = raw.trim();
+    final first = value.indexOf('{');
+    final last = value.lastIndexOf('}');
+    if (first >= 0 && last > first) {
+      value = value.substring(first, last + 1);
+    }
+    try {
+      final decoded = jsonDecode(value);
+      if (decoded is Map) {
+        return decoded.map((key, item) => MapEntry(key.toString(), item));
+      }
+    } catch (_) {}
+    return <String, dynamic>{};
+  }
+
+  double _aiAmount(dynamic value) {
+    if (value is num) return value.toDouble();
+    final raw = value == null ? '' : value.toString().trim().replaceAll(',', '.');
+    return double.tryParse(raw) ?? 0;
+  }
+
+  String _cashClass(dynamic value) {
+    final candidate = value == null ? '' : value.toString().trim().toLowerCase();
+    const allowed = {'operating', 'investing', 'financing', 'noncash'};
+    return allowed.contains(candidate) ? candidate : 'operating';
+  }
+
   Future<_BotReply> _answerRules(String original) async {
     final s = _norm(original);
     final amount = _amount(original);
