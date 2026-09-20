@@ -1,4 +1,5 @@
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -30,6 +31,14 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
   void initState() {
     super.initState();
     _ensureExtraAccounts();
+  }
+
+  @override
+  void dispose() {
+    unawaited(FinanceAiService.releaseDeviceModel());
+    input.dispose();
+    scroll.dispose();
+    super.dispose();
   }
 
   Future<void> _ensureExtraAccounts() async {
