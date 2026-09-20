@@ -360,7 +360,7 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
   @override
   void dispose() {
     _timer?.cancel();
-    unawaited(FinanceAiService.releaseDeviceModel());
+    unawaited(FinanceAiService.releaseProvider(provider));
     input.dispose();
     super.dispose();
   }
@@ -574,8 +574,9 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
     final previous = provider;
     final p = await SharedPreferences.getInstance();
     await p.setString('finance_ai_provider', value);
-    if (previous == 'device' && value != 'device') {
-      await FinanceAiService.releaseDeviceModel();
+    if ((previous == 'device' || previous == 'manager') &&
+        previous != value) {
+      await FinanceAiService.releaseProvider(previous);
     }
     if (mounted) setState(() => provider = value);
   }
