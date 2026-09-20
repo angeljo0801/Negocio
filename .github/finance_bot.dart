@@ -94,7 +94,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
   }
 
   String _conversationContext() {
-    final start = messages.length > 10 ? messages.length - 10 : 0;
+    final start = messages.length > 6 ? messages.length - 6 : 0;
     return messages
         .sublist(start)
         .map((m) => (m.fromUser ? 'USUARIO: ' : 'ASISTENTE: ') + m.text)
@@ -165,7 +165,7 @@ $original
 
     final raw = await FinanceAiService.askConfigured(
       prompt: prompt,
-      responseMode: 'normal',
+      responseMode: 'fast',
     );
     final obj = _decodeAiObject(raw);
 
