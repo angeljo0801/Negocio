@@ -52,24 +52,46 @@ class BulletinPage extends StatefulWidget {
 
 class _BulletinPageState extends State<BulletinPage> {
   List<Map<String, dynamic>> clients = [];
+  late Map<String, dynamic> purchase;
   String? clientId;
   bool loading = true;
 
   @override
   void initState() {
     super.initState();
+    purchase = Map<String, dynamic>.from(widget.purchase);
     load();
   }
 
-  Future<void> load() async {
-    clients = active(await Store.list('clients'));
-    final ids = purchaseAllocations(widget.purchase).map((e) => '${e['clientId']}').where((e) => e.isNotEmpty).toList();
-    clientId = widget.initialClientId ?? (ids.isNotEmpty ? ids.first : '${widget.purchase['clientId'] ?? ''}');
+  Future<void> load({bool keepClient = false}) async {
+    final r = await Future.wait([Store.list('clients'), Store.list('purchases')]);
+    clients = active(r[0]);
+    final purchases = active(r[1]);
+    final found = purchases.where((e) => '${e['id']}' == '${widget.purchase['id']}').firstOrNull;
+    if (found != null) purchase = Map<String, dynamic>.from(found);
+
+    final ids = purchaseAllocations(purchase).map((e) => '${e['clientId']}').where((e) => e.isNotEmpty).toList();
+    final previous = clientId;
+    if (keepClient && previous != null && ids.contains(previous)) {
+      clientId = previous;
+    } else {
+      final preferred = widget.initialClientId;
+      clientId = preferred != null && ids.contains(preferred)
+          ? preferred
+          : (ids.isNotEmpty ? ids.first : '${purchase['clientId'] ?? ''}');
+    }
     if (mounted) setState(() => loading = false);
   }
 
+  Future<void> editBulletin() async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseEditPage(existing: purchase)));
+    if (!mounted) return;
+    setState(() => loading = true);
+    await load(keepClient: true);
+  }
+
   Map<String, dynamic>? get allocation {
-    final list = purchaseAllocations(widget.purchase).where((e) => '${e['clientId']}' == clientId).toList();
+    final list = purchaseAllocations(purchase).where((e) => '${e['clientId']}' == clientId).toList();
     return list.isEmpty ? null : list.first;
   }
 
@@ -77,7 +99,7 @@ class _BulletinPageState extends State<BulletinPage> {
 
   Future<File> _buildPdf() async {
     final a = allocation ?? <String, dynamic>{};
-    final items = itemsForClient(widget.purchase, clientId ?? '');
+    final items = itemsForClient(purchase, clientId ?? '');
     final doc = pw.Document();
     doc.addPage(
       pw.MultiPage(
@@ -88,9 +110,9 @@ class _BulletinPageState extends State<BulletinPage> {
           pw.Text('Boletín de compra', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 16),
           pw.Text('Cliente: $name'),
-          pw.Text('Tienda: ${widget.purchase['store'] ?? ''}'),
-          pw.Text('Fecha: ${widget.purchase['date'] ?? ''}'),
-          if ('${widget.purchase['orderNumber'] ?? ''}'.trim().isNotEmpty) pw.Text('Pedido: ${widget.purchase['orderNumber']}'),
+          pw.Text('Tienda: ${purchase['store'] ?? ''}'),
+          pw.Text('Fecha: ${purchase['date'] ?? ''}'),
+          if ('${purchase['orderNumber'] ?? ''}'.trim().isNotEmpty) pw.Text('Pedido: ${purchase['orderNumber']}'),
           pw.SizedBox(height: 16),
           if (items.isNotEmpty)
             pw.Table.fromTextArray(
@@ -100,7 +122,7 @@ class _BulletinPageState extends State<BulletinPage> {
               cellAlignment: pw.Alignment.centerLeft,
             )
           else
-            pw.Text('${widget.purchase['description'] ?? 'Compra registrada'}'),
+            pw.Text('${purchase['description'] ?? 'Compra registrada'}'),
           pw.SizedBox(height: 16),
           pw.Divider(),
           pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Subtotal'), pw.Text(money(number(a['subtotal'])))]),
@@ -117,7 +139,7 @@ class _BulletinPageState extends State<BulletinPage> {
     );
     final dir = await getApplicationDocumentsDirectory();
     final safe = name.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
-    final path = '${dir.path}/boletin_${safe}_${widget.purchase['id']}.pdf';
+    final path = '${dir.path}/boletin_${safe}_${purchase['id']}.pdf';
     final file = File(path);
     await file.writeAsBytes(await doc.save(), flush: true);
     return file;
@@ -125,20 +147,20 @@ class _BulletinPageState extends State<BulletinPage> {
 
   Future<void> sharePdf() async {
     final f = await _buildPdf();
-    await Share.shareXFiles([XFile(f.path)], text: 'Boletín de compra de $name · ${widget.purchase['store']}');
+    await Share.shareXFiles([XFile(f.path)], text: 'Boletín de compra de $name · ${purchase['store']}');
   }
 
   Future<void> shareText() async {
     final a = allocation ?? <String, dynamic>{};
-    final items = itemsForClient(widget.purchase, clientId ?? '');
+    final items = itemsForClient(purchase, clientId ?? '');
     final b = StringBuffer()
       ..writeln('PAQUETERÍA - BOLETÍN DE COMPRA')
       ..writeln('Cliente: $name')
-      ..writeln('Tienda: ${widget.purchase['store']}')
-      ..writeln('Fecha: ${widget.purchase['date']}')
+      ..writeln('Tienda: ${purchase['store']}')
+      ..writeln('Fecha: ${purchase['date']}')
       ..writeln('');
     if (items.isEmpty) {
-      b.writeln('${widget.purchase['description']}');
+      b.writeln('${purchase['description']}');
     } else {
       for (final e in items) {
         b.writeln('• ${e['name']} x${e['qty'] ?? 1}: ${money(number(e['price']) * number(e['qty'] ?? 1))}');
@@ -155,11 +177,16 @@ class _BulletinPageState extends State<BulletinPage> {
   @override
   Widget build(BuildContext context) {
     if (loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    final allocations = purchaseAllocations(widget.purchase);
+    final allocations = purchaseAllocations(purchase);
     final a = allocation ?? <String, dynamic>{};
-    final items = itemsForClient(widget.purchase, clientId ?? '');
+    final items = itemsForClient(purchase, clientId ?? '');
     return Scaffold(
-      appBar: AppBar(title: const Text('Boletín del cliente')),
+      appBar: AppBar(
+        title: const Text('Boletín del cliente'),
+        actions: [
+          IconButton(tooltip: 'Editar boletín', onPressed: editBulletin, icon: const Icon(Icons.edit)),
+        ],
+      ),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         if (allocations.length > 1)
           _drop(
@@ -170,19 +197,25 @@ class _BulletinPageState extends State<BulletinPage> {
           ),
         if (allocations.length > 1) const SizedBox(height: 12),
         _sectionCard(context, 'Compra', Icons.receipt_long, [
-          Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          Text('${widget.purchase['store']} · ${widget.purchase['date']}'),
-          if ('${widget.purchase['orderNumber'] ?? ''}'.trim().isNotEmpty) Text('Pedido: ${widget.purchase['orderNumber']}'),
+          Row(children: [
+            Expanded(child: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
+            IconButton(tooltip: 'Editar', onPressed: editBulletin, icon: const Icon(Icons.edit_outlined)),
+          ]),
+          Text('${purchase['store']} · ${purchase['date']}'),
+          if ('${purchase['orderNumber'] ?? ''}'.trim().isNotEmpty) Text('Pedido: ${purchase['orderNumber']}'),
         ]),
         const SizedBox(height: 12),
         _sectionCard(context, 'Artículos', Icons.shopping_bag, [
-          if (items.isEmpty) Text('${widget.purchase['description'] ?? 'Sin detalle de artículos.'}'),
+          if (items.isEmpty) Text('${purchase['description'] ?? 'Sin detalle de artículos.'}'),
           for (final e in items)
             ListTile(
               contentPadding: EdgeInsets.zero,
               title: Text('${e['name']}'),
               subtitle: Text('Cantidad: ${e['qty'] ?? 1}'),
-              trailing: Text(money(number(e['price']) * number(e['qty'] ?? 1))),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(money(number(e['price']) * number(e['qty'] ?? 1))),
+                IconButton(tooltip: 'Editar artículo', icon: const Icon(Icons.edit_outlined), onPressed: editBulletin),
+              ]),
             ),
         ]),
         const SizedBox(height: 12),
@@ -192,8 +225,11 @@ class _BulletinPageState extends State<BulletinPage> {
           if (number(a['commissionPct']) != 0) _moneyRow('Comisión ${number(a['commissionPct']).toStringAsFixed(2)}%', number(a['total']) - number(a['subtotal']) - number(a['extras'])),
           const Divider(),
           _moneyRow('TOTAL CLIENTE', number(a['total']), bold: true),
+          Align(alignment: Alignment.centerRight, child: TextButton.icon(onPressed: editBulletin, icon: const Icon(Icons.edit), label: const Text('Editar importes'))),
         ]),
         const SizedBox(height: 14),
+        FilledButton.icon(onPressed: editBulletin, icon: const Icon(Icons.edit), label: const Text('Editar boletín')),
+        const SizedBox(height: 8),
         FilledButton.icon(onPressed: sharePdf, icon: const Icon(Icons.picture_as_pdf), label: const Text('Compartir boletín PDF')),
         const SizedBox(height: 8),
         OutlinedButton.icon(onPressed: shareText, icon: const Icon(Icons.share), label: const Text('Compartir como texto')),
