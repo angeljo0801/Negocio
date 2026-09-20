@@ -60,6 +60,7 @@ class Store {
   static Future<void> saveList(String key, List<Map<String, dynamic>> value) async {
     final p = await SharedPreferences.getInstance();
     await p.setString(key, jsonEncode(value));
+    await FinanceSyncService.refreshSnapshot();
   }
 
   static Future<Map<String, dynamic>> settings() async {
@@ -83,6 +84,7 @@ class Store {
   static Future<void> saveSettings(Map<String, dynamic> value) async {
     final p = await SharedPreferences.getInstance();
     await p.setString('settings', jsonEncode(value));
+    await FinanceSyncService.refreshSnapshot();
   }
 }
 
@@ -137,6 +139,7 @@ class _SplashPageState extends State<SplashPage> {
   @override
   void initState() {
     super.initState();
+    FinanceSyncService.refreshSnapshot();
     Timer(const Duration(milliseconds: 1350), () {
       if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeShell()));
     });
