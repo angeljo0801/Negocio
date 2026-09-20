@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:llama_flutter_android/llama_flutter_android.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -152,6 +153,8 @@ class FinanceDeviceLlmService {
 }
 
 class FinanceAiService {
+  static const MethodChannel _managerChannel =
+      MethodChannel('com.angelapps.local_ai_manager/client');
   static http.Client? _activeClient;
   static int _serial = 0;
   static int? _activeOnlineId;
@@ -266,42 +269,29 @@ class FinanceAiService {
     }
 
     if (provider == 'manager') {
-      Object? lastError;
-      const endpoints = <String>[
-        'http://127.0.0.1:11435/v1',
-        'http://localhost:11435/v1',
-      ];
-      for (var attempt = 0; attempt < 4; attempt++) {
-        final baseUrl = endpoints[attempt % endpoints.length];
-        try {
-          final result = await _runOnline((client, _) => _askOpenAiCompatible(
-                client: client,
-                baseUrl: baseUrl,
-                apiKey: '',
-                model: 'shared',
-                prompt: prompt,
-                maxTokens: _maxTokens(responseMode),
-              ));
-          onPartial?.call(result);
-          return result;
-        } catch (e) {
-          lastError = e;
-          if (attempt < 3) {
-            await Future<void>.delayed(Duration(milliseconds: 350 + attempt * 250));
-          }
+      try {
+        final answer = await _managerChannel
+            .invokeMethod<String>('ask', {
+              'prompt': prompt,
+              'system':
+                  'Eres la inteligencia de Finanzas Definitiva. Sigue cuidadosamente el contexto financiero suministrado.',
+              'maxTokens': _maxTokens(responseMode),
+              'temperature': 0.2,
+            })
+            .timeout(const Duration(minutes: 6));
+        final text = (answer ?? '').trim();
+        if (text.isEmpty) {
+          throw Exception('Local AI Manager no devolvió una respuesta.');
         }
-      }
-      final lower = lastError.toString().toLowerCase();
-      if (lastError is SocketException ||
-          lower.contains('connection refused') ||
-          lower.contains('failed host lookup') ||
-          lower.contains('connection closed') ||
-          lower.contains('operation not permitted')) {
+        onPartial?.call(text);
+        return text;
+      } on PlatformException catch (e) {
         throw Exception(
-          'No pude conectar con Local AI Manager. Déjalo abierto en segundo plano y vuelve a intentarlo.',
+          e.message?.trim().isNotEmpty == true
+              ? e.message!.trim()
+              : 'No pude comunicarme con Local AI Manager.',
         );
       }
-      throw lastError!;
     }
 
     if (provider == 'local') {
