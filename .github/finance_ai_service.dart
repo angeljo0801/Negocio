@@ -266,32 +266,42 @@ class FinanceAiService {
     }
 
     if (provider == 'manager') {
-      try {
-        final result = await _runOnline((client, _) => _askOpenAiCompatible(
-              client: client,
-              baseUrl: 'http://127.0.0.1:11435/v1',
-              apiKey: '',
-              model: 'shared',
-              prompt: prompt,
-              maxTokens: _maxTokens(responseMode),
-            ));
-        onPartial?.call(result);
-        return result;
-      } on SocketException {
-        throw Exception(
-          'Local AI Manager no está activo. Abre Local AI Manager, carga el modelo y vuelve a intentarlo.',
-        );
-      } catch (e) {
-        final lower = e.toString().toLowerCase();
-        if (lower.contains('connection refused') ||
-            lower.contains('failed host lookup') ||
-            lower.contains('connection closed')) {
-          throw Exception(
-            'Local AI Manager no está activo. Abre Local AI Manager, carga el modelo y vuelve a intentarlo.',
-          );
+      Object? lastError;
+      const endpoints = <String>[
+        'http://127.0.0.1:11435/v1',
+        'http://localhost:11435/v1',
+      ];
+      for (var attempt = 0; attempt < 4; attempt++) {
+        final baseUrl = endpoints[attempt % endpoints.length];
+        try {
+          final result = await _runOnline((client, _) => _askOpenAiCompatible(
+                client: client,
+                baseUrl: baseUrl,
+                apiKey: '',
+                model: 'shared',
+                prompt: prompt,
+                maxTokens: _maxTokens(responseMode),
+              ));
+          onPartial?.call(result);
+          return result;
+        } catch (e) {
+          lastError = e;
+          if (attempt < 3) {
+            await Future<void>.delayed(Duration(milliseconds: 350 + attempt * 250));
+          }
         }
-        rethrow;
       }
+      final lower = lastError.toString().toLowerCase();
+      if (lastError is SocketException ||
+          lower.contains('connection refused') ||
+          lower.contains('failed host lookup') ||
+          lower.contains('connection closed') ||
+          lower.contains('operation not permitted')) {
+        throw Exception(
+          'No pude conectar con Local AI Manager. Déjalo abierto en segundo plano y vuelve a intentarlo.',
+        );
+      }
+      throw lastError!;
     }
 
     if (provider == 'local') {
