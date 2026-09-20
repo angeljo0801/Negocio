@@ -1,7 +1,10 @@
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'database.dart';
+import 'finance_ai_service.dart';
 import 'models.dart';
 
 class FinanceAssistantPage extends StatefulWidget {
@@ -18,7 +21,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
   final messages = <_BotMessage>[
     const _BotMessage(
       fromUser: false,
-      text: 'Soy tu asistente financiero local. Dime una operación en palabras normales, por ejemplo: “Pagué \$45 de gasolina”, “Compré \$300 de mercancía a crédito” o “Un cliente me pagó \$120”. Te explicaré el asiento y podrás crearlo después de revisarlo.',
+      text: 'Soy tu asistente financiero con IA. Uso el modelo que elegiste en Ajustes de IA. Escríbeme como hablas normalmente: interpretaré la operación, te pediré solo los datos que falten y te mostraré el asiento antes de guardar nada.',
     ),
   ];
   bool busy = false;
@@ -68,7 +71,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
     return double.tryParse(raw ?? '');
   }
 
-  Future<_BotReply> _answer(String original) async {
+  Future<_BotReply> _answerRules(String original) async {
     final s = _norm(original);
     final amount = _amount(original);
 
