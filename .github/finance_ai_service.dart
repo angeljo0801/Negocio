@@ -12,6 +12,50 @@ class FinanceDeviceLlmService {
   static int _serial = 0;
   static int? _activeId;
   static final Set<int> _cancelled = <int>{};
+  static Timer? _idleReleaseTimer;
+  static bool _releasing = false;
+
+  static void _cancelIdleRelease() {
+    _idleReleaseTimer?.cancel();
+    _idleReleaseTimer = null;
+  }
+
+  static void _scheduleIdleRelease() {
+    _cancelIdleRelease();
+    _idleReleaseTimer = Timer(const Duration(seconds: 45), () {
+      unawaited(releaseModel());
+    });
+  }
+
+  static Future<void> releaseModel({bool stopGeneration = false}) async {
+    _cancelIdleRelease();
+    if (_releasing) return;
+    if (_activeId != null && !stopGeneration) {
+      _scheduleIdleRelease();
+      return;
+    }
+
+    _releasing = true;
+    try {
+      if (stopGeneration) {
+        final id = _activeId;
+        if (id != null) _cancelled.add(id);
+        try {
+          await _controller?.stop();
+        } catch (_) {}
+        _activeId = null;
+      }
+
+      final controller = _controller;
+      _controller = null;
+      _loadedPath = null;
+      try {
+        await controller?.dispose();
+      } catch (_) {}
+    } finally {
+      _releasing = false;
+    }
+  }
 
   static int _maxTokens(String mode) {
     switch (mode) {
@@ -25,6 +69,7 @@ class FinanceDeviceLlmService {
   }
 
   static Future<void> _ensureLoaded() async {
+    _cancelIdleRelease();
     final prefs = await SharedPreferences.getInstance();
     final path = prefs.getString('finance_ai_device_model_path') ?? '';
     if (path.isEmpty || !File(path).existsSync()) {
@@ -53,6 +98,7 @@ class FinanceDeviceLlmService {
     void Function(String text)? onPartial,
   }) async {
     final id = ++_serial;
+    _cancelIdleRelease();
     _activeId = id;
     try {
       await _ensureLoaded();
@@ -92,6 +138,7 @@ class FinanceDeviceLlmService {
     } finally {
       _cancelled.remove(id);
       if (_activeId == id) _activeId = null;
+      _scheduleIdleRelease();
     }
   }
 
@@ -109,6 +156,10 @@ class FinanceAiService {
   static int _serial = 0;
   static int? _activeOnlineId;
   static final Set<int> _cancelled = <int>{};
+
+  static Future<void> releaseDeviceModel() async {
+    await FinanceDeviceLlmService.releaseModel(stopGeneration: true);
+  }
 
   static Future<void> cancelCurrent() async {
     final id = _activeOnlineId;
