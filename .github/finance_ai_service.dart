@@ -164,6 +164,28 @@ class FinanceAiService {
     await FinanceDeviceLlmService.releaseModel(stopGeneration: true);
   }
 
+  static Future<void> releaseProvider(String provider) async {
+    final selected = provider.trim();
+    if (selected == 'device') {
+      await FinanceDeviceLlmService.releaseModel(stopGeneration: true);
+      return;
+    }
+    if (selected == 'manager') {
+      try {
+        await _managerChannel
+            .invokeMethod<String>('unload')
+            .timeout(const Duration(seconds: 20));
+      } catch (_) {
+        // Leaving the chat must never trap the user on an error screen.
+      }
+    }
+  }
+
+  static Future<void> releaseConfiguredLocalModel() async {
+    final prefs = await SharedPreferences.getInstance();
+    await releaseProvider(prefs.getString('finance_ai_provider') ?? '');
+  }
+
   static Future<void> cancelCurrent() async {
     final id = _activeOnlineId;
     if (id != null) _cancelled.add(id);
