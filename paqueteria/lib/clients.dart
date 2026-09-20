@@ -193,7 +193,7 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
           title: Text('${r['name']}'),
           subtitle: Text('${r['province']} · ${r['phone']}\n${r['address']}'),
           onTap: () => editRecipient(r),
-          trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             IconButton(tooltip: 'Editar', icon: const Icon(Icons.edit_outlined), onPressed: () => editRecipient(r)),
             IconButton(icon: const Icon(Icons.delete_outline), onPressed: () async { if (await confirmDelete(context, 'este destinatario')) { await softDelete('recipients', '${r['id']}'); load(); } }),
           ]),
@@ -208,7 +208,7 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
           title: Text('${p['store']} · ${money(purchaseAmountForClient(p, widget.clientId))}'),
           subtitle: Text('${p['description']}\n${p['status']}'),
           onTap: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseEditPage(existing: p))); await load(); },
-          trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             IconButton(tooltip: 'Boletín', icon: const Icon(Icons.receipt_long), onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => BulletinPage(purchase: p, initialClientId: widget.clientId))); await load(); }),
             IconButton(tooltip: 'Editar', icon: const Icon(Icons.edit_outlined), onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseEditPage(existing: p))); await load(); }),
           ]),
@@ -233,7 +233,7 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
           title: Text(money(number(p['amount']))),
           subtitle: Text('${p['date'] ?? ''}'),
           onTap: () => editPayment(p),
-          trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             IconButton(tooltip: 'Editar', icon: const Icon(Icons.edit_outlined), onPressed: () => editPayment(p)),
             IconButton(icon: const Icon(Icons.delete_outline), onPressed: () async { if (await confirmDelete(context, 'este pago')) { await softDelete('payments', '${p['id']}'); load(); } }),
           ]),
