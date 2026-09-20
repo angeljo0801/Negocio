@@ -19,6 +19,7 @@ jobs:
           cat .github/archive-parts/part-* > Finanzas_Definitiva_Flutter_v3.zip
           echo "05d465ef3bfb2802934e2b68991e96bdb1e491ad3b825fe9c779805b5b6e1970  Finanzas_Definitiva_Flutter_v3.zip" | sha256sum --check
           unzip -o Finanzas_Definitiva_Flutter_v3.zip
+          cp .github/finance_bot.dart finanzas_definitiva/lib/finance_bot.dart
 
       - name: Integrar sincronizacion con Paqueteria
         run: |
@@ -33,10 +34,12 @@ jobs:
           sync.write_text(ss)
           main=Path('finanzas_definitiva/lib/main.dart')
           s=main.read_text()
+          marker="import 'manager_pages.dart';"
+          if marker not in s: raise SystemExit('No se encontro import manager_pages.dart')
           if "import 'paqueteria_sync.dart';" not in s:
-              marker="import 'manager_pages.dart';"
-              if marker not in s: raise SystemExit('No se encontro import manager_pages.dart')
               s=s.replace(marker, marker+"\nimport 'paqueteria_sync.dart';")
+          if "import 'finance_bot.dart';" not in s:
+              s=s.replace("import 'paqueteria_sync.dart';", "import 'paqueteria_sync.dart';\nimport 'finance_bot.dart';")
           old="class _HomePageState extends State<HomePage> {\n  int index = 0, revision = 0;"
           if old in s:
               new="class _HomePageState extends State<HomePage> {\n  @override\n  void initState() {\n    super.initState();\n    Future.microtask(() async {\n      final result = await PaqueteriaSyncService.sync(silent: true);\n      if (result != null && mounted) refresh();\n    });\n  }\n  int index = 0, revision = 0;"
@@ -46,10 +49,19 @@ jobs:
               if marker not in s: raise SystemExit('No se encontro Catálogo de cuentas')
               tile="      ListTile(leading:const Icon(Icons.sync_alt),title:const Text('Sincronizar con Paquetería'),subtitle:const Text('Compras, paquetes, pendientes, agentes y gastos'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>PaqueteriaSyncPage(onChanged:widget.onChanged)))),\n"
               s=s.replace(marker,tile+marker)
+          if 'Asistente financiero' not in s:
+              settings_marker="      ListTile(leading:const Icon(Icons.receipt_long_outlined),title:const Text('Libro diario profesional')"
+              if settings_marker not in s: raise SystemExit('No se encontro Libro diario profesional')
+              bot_tile="      ListTile(leading:const Icon(Icons.smart_toy_outlined),title:const Text('Asistente financiero'),subtitle:const Text('Te explica y prepara asientos, gastos, cobros y compras'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:widget.onChanged)))),\n"
+              s=s.replace(settings_marker,bot_tile+settings_marker)
+              dash_marker="      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DailyPositionPage())),icon:const Icon(Icons.today),label:const Text('Ver posición diaria')),"
+              if dash_marker in s:
+                  bot_button="      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:(){}))),icon:const Icon(Icons.smart_toy_outlined),label:const Text('Abrir asistente financiero')),\n      const SizedBox(height:8),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DailyPositionPage())),icon:const Icon(Icons.today),label:const Text('Ver posición diaria')),"
+                  s=s.replace(dash_marker,bot_button)
           main.write_text(s)
           pub=Path('finanzas_definitiva/pubspec.yaml')
           ps=pub.read_text()
-          ps=re.sub(r'^version:.*$', 'version: 2.1.0+6', ps, flags=re.M)
+          ps=re.sub(r'^version:.*$', 'version: 2.2.0+7', ps, flags=re.M)
           pub.write_text(ps)
           PY
 
