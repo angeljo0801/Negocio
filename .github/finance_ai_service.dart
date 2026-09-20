@@ -16,11 +16,11 @@ class FinanceDeviceLlmService {
   static int _maxTokens(String mode) {
     switch (mode) {
       case 'fast':
-        return 220;
+        return 160;
       case 'deep':
-        return 900;
+        return 520;
       default:
-        return 480;
+        return 280;
     }
   }
 
@@ -34,31 +34,15 @@ class FinanceDeviceLlmService {
     try {
       await _controller?.dispose();
     } catch (_) {}
-    var controller = LlamaController();
-    var gpuLayers = 0;
-    try {
-      final gpu = await controller.detectGpu();
-      if (gpu.vulkanSupported) gpuLayers = gpu.recommendedGpuLayers;
-    } catch (_) {}
-    try {
-      await controller.loadModel(
-        modelPath: path,
-        threads: (Platform.numberOfProcessors - 2).clamp(2, 8).toInt(),
-        contextSize: 4096,
-        gpuLayers: gpuLayers,
-      );
-    } catch (_) {
-      try {
-        await controller.dispose();
-      } catch (_) {}
-      controller = LlamaController();
-      await controller.loadModel(
-        modelPath: path,
-        threads: (Platform.numberOfProcessors - 2).clamp(2, 8).toInt(),
-        contextSize: 4096,
-        gpuLayers: 0,
-      );
-    }
+    final controller = LlamaController();
+    // Safe mode for Android: CPU-only avoids vendor Vulkan/native crashes that can
+    // send the app to the launcher when inference starts.
+    await controller.loadModel(
+      modelPath: path,
+      threads: Platform.numberOfProcessors.clamp(2, 4).toInt(),
+      contextSize: 2048,
+      gpuLayers: 0,
+    );
     _controller = controller;
     _loadedPath = path;
   }
