@@ -18,7 +18,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
   final messages = <_BotMessage>[
     const _BotMessage(
       fromUser: false,
-      text: 'Soy tu asistente financiero local. Dime una operación en palabras normales, por ejemplo: “Pagué $45 de gasolina”, “Compré $300 de mercancía a crédito” o “Un cliente me pagó $120”. Te explicaré el asiento y podrás crearlo después de revisarlo.',
+      text: 'Soy tu asistente financiero local. Dime una operación en palabras normales, por ejemplo: “Pagué \$45 de gasolina”, “Compré \$300 de mercancía a crédito” o “Un cliente me pagó \$120”. Te explicaré el asiento y podrás crearlo después de revisarlo.',
     ),
   ];
   bool busy = false;
@@ -86,7 +86,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
 
     if (_has(s, ['como agregar un gasto', 'como anadir un gasto', 'registrar gasto', 'meter un gasto']) && amount == null) {
       return const _BotReply(
-        'Para un gasto sencillo puedes ir a Movimientos → Gasto, escoger la categoría, poner el importe y guardar. También puedes decírmelo aquí, por ejemplo: “Pagué $35 de gasolina” o “Pagué $900 de alquiler”, y te preparo el asiento.',
+        'Para un gasto sencillo puedes ir a Movimientos → Gasto, escoger la categoría, poner el importe y guardar. También puedes decírmelo aquí, por ejemplo: “Pagué \$35 de gasolina” o “Pagué \$900 de alquiler”, y te preparo el asiento.',
       );
     }
 
@@ -98,13 +98,13 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
 
     if (_has(s, ['deuda', 'por pagar', 'me deben']) && amount == null) {
       return const _BotReply(
-        'Para controlar una deuda por vencimiento usa Plan → Deudas. Ahí eliges “Yo debo pagar” o “Me deben cobrar”. Si además quieres crear el asiento contable, dime qué originó la deuda y el importe; por ejemplo: “Compré $400 de mercancía a crédito”.',
+        'Para controlar una deuda por vencimiento usa Plan → Deudas. Ahí eliges “Yo debo pagar” o “Me deben cobrar”. Si además quieres crear el asiento contable, dime qué originó la deuda y el importe; por ejemplo: “Compré \$400 de mercancía a crédito”.',
       );
     }
 
     if (amount == null || amount <= 0) {
       return const _BotReply(
-        'Entiendo la idea, pero necesito un importe para proponerte un asiento. Escríbelo con el monto, por ejemplo: “Pagué $60 de gasolina”, “Vendí $250 en efectivo” o “Compré $500 de mercancía a crédito”.',
+        'Entiendo la idea, pero necesito un importe para proponerte un asiento. Escríbelo con el monto, por ejemplo: “Pagué \$60 de gasolina”, “Vendí \$250 en efectivo” o “Compré \$500 de mercancía a crédito”.',
       );
     }
 
@@ -207,7 +207,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
     }
 
     return const _BotReply(
-      'Puedo ayudarte mejor si describes qué ocurrió con el dinero. Por ejemplo: “Pagué $40 de gasolina”, “Compré $200 de mercancía a crédito”, “Vendí $300 en efectivo” o “Un cliente me pagó $150”.',
+      'Puedo ayudarte mejor si describes qué ocurrió con el dinero. Por ejemplo: “Pagué \$40 de gasolina”, “Compré \$200 de mercancía a crédito”, “Vendí \$300 en efectivo” o “Un cliente me pagó \$150”.',
     );
   }
 
@@ -313,9 +313,9 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
     const suggestions = [
       '¿Cómo creo un asiento?',
       '¿Cómo añado un gasto?',
-      'Pagué $40 de gasolina',
-      'Compré $250 de mercancía a crédito',
-      'Un cliente me pagó $120',
+      'Pagué \$40 de gasolina',
+      'Compré \$250 de mercancía a crédito',
+      'Un cliente me pagó \$120',
     ];
     return Scaffold(
       appBar: AppBar(title: const Text('Asistente financiero')),
@@ -386,7 +386,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => send(),
                       decoration: const InputDecoration(
-                        hintText: 'Ej.: Pagué $55 de gasolina...',
+                        hintText: 'Ej.: Pagué \$55 de gasolina...',
                         border: OutlineInputBorder(),
                       ),
                     ),
