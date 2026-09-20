@@ -38,10 +38,98 @@ class _PurchasesPageState extends State<PurchasesPage> {
   }
 
   String buyers(Map<String, dynamic> p) {
-    final ids = purchaseAllocations(p).map((e) => '${e['clientId']}').where((e) => e.isNotEmpty).toSet();
+    final ids = purchaseAllocations(p)
+        .map((e) => '${e['clientId']}')
+        .where((e) => e.isNotEmpty)
+        .toSet();
     if (ids.isEmpty) return clientName(clients, '${p['clientId']}');
     if (ids.length == 1) return clientName(clients, ids.first);
     return '${ids.length} clientes';
+  }
+
+  bool isUnassigned(Map<String, dynamic> p) {
+    final direct = '${p['clientId'] ?? ''}'.trim();
+    return direct.isEmpty && purchaseAllocations(p).isEmpty;
+  }
+
+  Future<void> assignClient(Map<String, dynamic> purchase) async {
+    if (clients.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Primero crea un cliente para poder asociar el pedido.'),
+        ),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              leading: Icon(Icons.person_add_alt_1),
+              title: Text('Asociar pedido a un cliente'),
+              subtitle: Text('Selecciona un cliente ya creado'),
+            ),
+            const Divider(height: 1),
+            for (final c in clients)
+              ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.person)),
+                title: Text('${c['name']}'),
+                subtitle: '${c['phone'] ?? ''}'.trim().isEmpty
+                    ? null
+                    : Text('${c['phone']}'),
+                onTap: () => Navigator.pop(context, '${c['id']}'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || selected.isEmpty) return;
+
+    final rows = await Store.list('purchases');
+    final index =
+        rows.indexWhere((e) => '${e['id']}' == '${purchase['id']}');
+    if (index < 0) return;
+
+    final current = rows[index];
+    final base = number(current['total']);
+    final commissionPct = number(current['commissionPct']);
+    final assignedItems = purchaseItems(current)
+        .map((e) => {...e, 'clientId': selected})
+        .toList();
+
+    rows[index] = {
+      ...current,
+      'clientId': selected,
+      'items': assignedItems,
+      'allocations': [
+        {
+          'clientId': selected,
+          'subtotal': base,
+          'extras': 0.0,
+          'commissionPct': commissionPct,
+          'total': base * (1 + commissionPct / 100),
+          'itemIds':
+              assignedItems.map((e) => '${e['id']}').toList(),
+        }
+      ],
+      'clientTotal': base * (1 + commissionPct / 100),
+      'unassigned': false,
+    };
+
+    await Store.saveList('purchases', rows);
+    if (!mounted) return;
+    await load();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Pedido asociado a ${clientName(clients, selected)}.',
+        ),
+      ),
+    );
   }
 
   @override
@@ -68,19 +156,37 @@ class _PurchasesPageState extends State<PurchasesPage> {
                         child: Icon(p['type'] == 'En tienda' ? Icons.store : Icons.shopping_cart),
                       );
                     }),
-                    title: Text('${p['store']} · ${money(number(p['clientTotal']))}'),
-                    subtitle: Text('${buyers(p)} · ${p['status']}\n${p['description']}'),
+                    title: Text(
+                      '${p['store']} · ${money(isUnassigned(p) ? number(p['total']) : number(p['clientTotal']))}',
+                    ),
+                    subtitle: Text(
+                      isUnassigned(p)
+                          ? 'Sin cliente · Toca el icono de persona para asociarlo\n${p['status']} · ${p['description']}'
+                          : '${buyers(p)} · ${p['status']}\n${p['description']}',
+                    ),
                     isThreeLine: true,
                     onTap: () async {
                       await Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseEditPage(existing: p)));
                       load();
                     },
                     trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
-                      IconButton(
-                        tooltip: 'Boletín',
-                        icon: const Icon(Icons.receipt_long),
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => BulletinPage(purchase: p))),
-                      ),
+                      if (isUnassigned(p))
+                        IconButton(
+                          tooltip: 'Asociar cliente',
+                          icon: const Icon(Icons.person_add_alt_1),
+                          onPressed: () => assignClient(p),
+                        )
+                      else
+                        IconButton(
+                          tooltip: 'Boletín',
+                          icon: const Icon(Icons.receipt_long),
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => BulletinPage(purchase: p),
+                            ),
+                          ),
+                        ),
                       IconButton(
                         icon: const Icon(Icons.delete_outline),
                         onPressed: () async {
@@ -453,12 +559,31 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       return;
     }
     final allocations = buildAllocations(base);
-    if (allocations.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecciona un cliente para la compra o para cada artículo.')));
+    final hasAssignedItem =
+        items.any((e) => '${e['clientId'] ?? ''}'.trim().isNotEmpty);
+    final hasUnassignedItem =
+        items.any((e) => '${e['clientId'] ?? ''}'.trim().isEmpty);
+    final unassigned =
+        clientId == null && allocations.isEmpty && !hasAssignedItem;
+
+    if (!unassigned && allocations.isEmpty) {
+      final message = hasAssignedItem && hasUnassignedItem
+          ? 'Hay artículos sin cliente. Asígnalos todos o elige un cliente predeterminado.'
+          : 'Selecciona un cliente para la compra o guárdala completamente sin cliente.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
       return;
     }
-    final primaryClient = clientId ?? '${allocations.first['clientId']}';
-    final clientTotal = allocations.fold<double>(0, (a, e) => a + number(e['total']));
+
+    final primaryClient =
+        unassigned ? '' : (clientId ?? '${allocations.first['clientId']}');
+    final clientTotal = unassigned
+        ? 0.0
+        : allocations.fold<double>(
+            0,
+            (a, e) => a + number(e['total']),
+          );
     final rows = await Store.list('purchases');
     final item = {
       'id': widget.existing?['id'] ?? newId(),
@@ -479,13 +604,14 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       'ocrMeta': ocrMeta,
       'items': items,
       'allocations': allocations,
+      'unassigned': unassigned,
       'deleted': false,
     };
     final i = rows.indexWhere((e) => e['id'] == item['id']);
     if (i >= 0) rows[i] = {...rows[i], ...item}; else rows.add(item);
     await Store.saveList('purchases', rows);
     if (!mounted) return;
-    if (widget.existing == null) {
+    if (widget.existing == null && allocations.isNotEmpty) {
       final openBulletin = await showDialog<bool>(
         context: context,
         builder: (_) => AlertDialog(
@@ -500,6 +626,15 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       if (openBulletin == true && mounted) {
         await Navigator.push(context, MaterialPageRoute(builder: (_) => BulletinPage(purchase: item)));
       }
+    }
+    if (mounted && unassigned) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Pedido guardado sin cliente. Puedes asociarlo más adelante.',
+          ),
+        ),
+      );
     }
     if (mounted) Navigator.pop(context);
   }
@@ -620,12 +755,31 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
           ],
         ],
         const SizedBox(height: 12),
-        _drop('Cliente predeterminado', clientId, clients.map((c) => DropdownMenuItem(value: '${c['id']}', child: Text('${c['name']}'))).toList(), (v) => setState(() {
-          clientId = v;
-          for (final e in items) {
-            if ('${e['clientId'] ?? ''}'.isEmpty) e['clientId'] = v ?? '';
-          }
-        })),
+        _drop(
+          'Cliente predeterminado (opcional)',
+          clientId,
+          clients
+              .map(
+                (c) => DropdownMenuItem(
+                  value: '${c['id']}',
+                  child: Text('${c['name']}'),
+                ),
+              )
+              .toList(),
+          (v) => setState(() {
+            clientId = v;
+            for (final e in items) {
+              if ('${e['clientId'] ?? ''}'.isEmpty) {
+                e['clientId'] = v ?? '';
+              }
+            }
+          }),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Puedes guardar el pedido sin cliente y asociarlo después desde Pedidos y compras.',
+          style: TextStyle(fontSize: 12),
+        ),
         const SizedBox(height: 12),
         _drop('Tipo de compra', type, ['Online', 'En tienda', 'Manual'].map((x) => DropdownMenuItem(value: x, child: Text(x))).toList(), (v) => setState(() => type = v ?? type)),
         const SizedBox(height: 12),
