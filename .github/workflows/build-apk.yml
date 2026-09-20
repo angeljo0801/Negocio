@@ -20,6 +20,15 @@ jobs:
           echo "05d465ef3bfb2802934e2b68991e96bdb1e491ad3b825fe9c779805b5b6e1970  Finanzas_Definitiva_Flutter_v3.zip" | sha256sum --check
           unzip -o Finanzas_Definitiva_Flutter_v3.zip
 
+      - name: Inspeccionar fuente para integracion
+        uses: actions/upload-artifact@v4
+        with:
+          name: Finanzas-Source-Snapshot
+          path: |
+            finanzas_definitiva/lib
+            finanzas_definitiva/pubspec.yaml
+          retention-days: 2
+
       - name: Instalar Flutter
         uses: subosito/flutter-action@v2
         with:
