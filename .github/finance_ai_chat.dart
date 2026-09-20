@@ -360,6 +360,7 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    unawaited(FinanceAiService.releaseDeviceModel());
     input.dispose();
     super.dispose();
   }
