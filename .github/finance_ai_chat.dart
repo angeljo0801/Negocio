@@ -206,16 +206,16 @@ AL ACONSEJAR:
       FROM transactions t
       WHERE t.deleted_at IS NULL
       ORDER BY t.date DESC,t.id DESC
-      LIMIT 20
+      LIMIT 6
     ''');
     final debts = await d.query(
       'debts',
       where: 'paid=0',
       orderBy: 'due_date ASC',
-      limit: 20,
+      limit: 6,
     );
     final remittances =
-        await d.query('remittances', orderBy: 'created_at DESC', limit: 15);
+        await d.query('remittances', orderBy: 'created_at DESC', limit: 5);
 
     final b = StringBuffer();
     b.writeln('DATOS FINANCIEROS ACTUALES DEL USUARIO');
@@ -290,7 +290,7 @@ AL ACONSEJAR:
 
   static String conversation(List<FinanceAiMessage> messages) {
     final selected =
-        messages.length > 12 ? messages.sublist(messages.length - 12) : messages;
+        messages.length > 6 ? messages.sublist(messages.length - 6) : messages;
     return selected
         .where((m) => m.text.trim().isNotEmpty)
         .map((m) =>
@@ -514,21 +514,27 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
         history: historyBefore,
         includeLiveData: useFinanceData,
       );
+      final localDevice = provider == 'device';
+      final safePrompt = localDevice && prompt.length > 6500
+          ? prompt.substring(0, 6500)
+          : prompt;
       final result = await FinanceAiService.askConfigured(
-        prompt: prompt,
+        prompt: safePrompt,
         providerOverride: provider,
-        responseMode: responseMode,
-        onPartial: (partial) {
-          if (!mounted || partial.trim().isEmpty) return;
-          final cur = active;
-          if (cur == null || cur.messages.isEmpty) return;
-          final m = List<FinanceAiMessage>.from(cur.messages);
-          m[m.length - 1] = m.last.copyWith(text: partial);
-          setState(() => _put(cur.copyWith(
-                updatedAt: DateTime.now(),
-                messages: m,
-              )));
-        },
+        responseMode: localDevice ? 'fast' : responseMode,
+        onPartial: localDevice
+            ? null
+            : (partial) {
+                if (!mounted || partial.trim().isEmpty) return;
+                final cur = active;
+                if (cur == null || cur.messages.isEmpty) return;
+                final m = List<FinanceAiMessage>.from(cur.messages);
+                m[m.length - 1] = m.last.copyWith(text: partial);
+                setState(() => _put(cur.copyWith(
+                      updatedAt: DateTime.now(),
+                      messages: m,
+                    )));
+              },
       );
       final cur = active;
       if (cur != null && cur.messages.isNotEmpty) {
