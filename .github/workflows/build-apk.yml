@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 35
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
@@ -20,126 +20,36 @@ jobs:
           echo "05d465ef3bfb2802934e2b68991e96bdb1e491ad3b825fe9c779805b5b6e1970  Finanzas_Definitiva_Flutter_v3.zip" | sha256sum --check
           unzip -o Finanzas_Definitiva_Flutter_v3.zip
 
-
       - name: Integrar sincronizacion con Paqueteria
         run: |
           echo 'aW1wb3J0ICdkYXJ0OmNvbnZlcnQnOwoKaW1wb3J0ICdwYWNrYWdlOmZsdXR0ZXIvbWF0ZXJpYWwuZGFydCc7CmltcG9ydCAncGFja2FnZTpmbHV0dGVyL3NlcnZpY2VzLmRhcnQnOwoKaW1wb3J0ICdkYXRhYmFzZS5kYXJ0JzsKCkxpc3Q8TWFwPFN0cmluZywgZHluYW1pYz4+IF9wYXFSb3dzKGR5bmFtaWMgdmFsdWUpIHsKICBpZiAodmFsdWUgaXMhIExpc3QpIHJldHVybiA8TWFwPFN0cmluZywgZHluYW1pYz4+W107CiAgcmV0dXJuIHZhbHVlLndoZXJlVHlwZTxNYXA+KCkubWFwKChlKSA9PiBNYXA8U3RyaW5nLCBkeW5hbWljPi5mcm9tKGUpKS50b0xpc3QoKTsKfQoKZG91YmxlIF9wYXFOdW1iZXIoZHluYW1pYyB2YWx1ZSkgPT4gZG91YmxlLnRyeVBhcnNlKCcke3ZhbHVlID8/ICcnfScucmVwbGFjZUFsbCgnLCcsICcnKS5yZXBsYWNlQWxsKHInJCcsICcnKS50cmltKCkpID8/IDA7CgpEYXRlVGltZSBfcGFxRGF0ZShkeW5hbWljIHZhbHVlKSA9PiBEYXRlVGltZS50cnlQYXJzZSgnJHt2YWx1ZSA/PyAnJ30nKSA/PyBEYXRlVGltZS5ub3coKTsKCmNsYXNzIFBhcXVldGVyaWFTeW5jUmVzdWx0IHsKICBmaW5hbCBpbnQgcHVyY2hhc2VzOwogIGZpbmFsIGludCBwYXltZW50czsKICBmaW5hbCBpbnQgZXhwZW5zZXM7CiAgZmluYWwgaW50IGRlYnRzOwogIGZpbmFsIFN0cmluZyBnZW5lcmF0ZWRBdDsKICBjb25zdCBQYXF1ZXRlcmlhU3luY1Jlc3VsdCh7cmVxdWlyZWQgdGhpcy5wdXJjaGFzZXMsIHJlcXVpcmVkIHRoaXMucGF5bWVudHMsIHJlcXVpcmVkIHRoaXMuZXhwZW5zZXMsIHJlcXVpcmVkIHRoaXMuZGVidHMsIHJlcXVpcmVkIHRoaXMuZ2VuZXJhdGVkQXR9KTsKfQoKY2xhc3MgUGFxdWV0ZXJpYVN5bmNTZXJ2aWNlIHsKICBzdGF0aWMgY29uc3QgTWV0aG9kQ2hhbm5lbCBfY2hhbm5lbCA9IE1ldGhvZENoYW5uZWwoJ2NvbS5hbmdlbC5maW5hbnphcy9wYXF1ZXRlcmlhX3N5bmMnKTsKCiAgc3RhdGljIEZ1dHVyZTxQYXF1ZXRlcmlhU3luY1Jlc3VsdD8+IHN5bmMoe2Jvb2wgc2lsZW50ID0gZmFsc2V9KSBhc3luYyB7CiAgICB0cnkgewogICAgICBmaW5hbCByYXcgPSBhd2FpdCBfY2hhbm5lbC5pbnZva2VNZXRob2Q8U3RyaW5nPigncmVhZFNuYXBzaG90Jyk7CiAgICAgIGlmIChyYXcgPT0gbnVsbCB8fCByYXcudHJpbSgpLmlzRW1wdHkgfHwgcmF3LnRyaW0oKSA9PSAne30nKSByZXR1cm4gbnVsbDsKICAgICAgZmluYWwgZGVjb2RlZCA9IGpzb25EZWNvZGUocmF3KTsKICAgICAgaWYgKGRlY29kZWQgaXMhIE1hcCkgdGhyb3cgY29uc3QgRm9ybWF0RXhjZXB0aW9uKCdMb3MgZGF0b3MgZGUgUGFxdWV0ZXLDrWEgbm8gc29uIHbDoWxpZG9zLicpOwogICAgICBmaW5hbCBzbmFwc2hvdCA9IE1hcDxTdHJpbmcsIGR5bmFtaWM+LmZyb20oZGVjb2RlZCk7CiAgICAgIGlmICgnJHtzbmFwc2hvdFsnc2NoZW1hJ10gPz8gJyd9JyAhPSAnYWxhcy1jYXJnby1maW5hbmNlLXN5bmMtdjEnKSB7CiAgICAgICAgdGhyb3cgY29uc3QgRm9ybWF0RXhjZXB0aW9uKCdWZXJzacOzbiBkZSBzaW5jcm9uaXphY2nDs24gbm8gY29tcGF0aWJsZS4nKTsKICAgICAgfQogICAgICByZXR1cm4gQXBwRGF0YWJhc2UuaW5zdGFuY2UuaW1wb3J0UGFxdWV0ZXJpYVNuYXBzaG90KHNuYXBzaG90KTsKICAgIH0gb24gUGxhdGZvcm1FeGNlcHRpb24gY2F0Y2ggKGUpIHsKICAgICAgaWYgKCFzaWxlbnQpIHJldGhyb3c7CiAgICAgIGlmIChlLmNvZGUgPT0gJ1BBUVVFVEVSSUFfTk9UX0FWQUlMQUJMRScgfHwgZS5jb2RlID09ICdQQVFVRVRFUklBX1BFUk1JU1NJT04nKSByZXR1cm4gbnVsbDsKICAgICAgcmV0dXJuIG51bGw7CiAgICB9IGNhdGNoIChfKSB7CiAgICAgIGlmICghc2lsZW50KSByZXRocm93OwogICAgICByZXR1cm4gbnVsbDsKICAgIH0KICB9Cn0KCmV4dGVuc2lvbiBQYXF1ZXRlcmlhU3luY0RhdGFiYXNlIG9uIEFwcERhdGFiYXNlIHsKICBGdXR1cmU8UGFxdWV0ZXJpYVN5bmNSZXN1bHQ+IGltcG9ydFBhcXVldGVyaWFTbmFwc2hvdChNYXA8U3RyaW5nLCBkeW5hbWljPiBzbmFwc2hvdCkgYXN5bmMgewogICAgZmluYWwgZGF0YWJhc2UgPSBhd2FpdCBkYjsKICAgIGZpbmFsIGNhc2ggPSBhd2FpdCBhY2NvdW50SWQoJzEwMTAnKTsKICAgIGZpbmFsIHJlY2VpdmFibGUgPSBhd2FpdCBhY2NvdW50SWQoJzEwMjAnKTsKICAgIGZpbmFsIHNhbGVzID0gYXdhaXQgYWNjb3VudElkKCc0MDEwJyk7CiAgICBmaW5hbCBjb2dzID0gYXdhaXQgYWNjb3VudElkKCc1MDEwJyk7CiAgICBmaW5hbCBvcGVyYXRpbmdFeHBlbnNlID0gYXdhaXQgYWNjb3VudElkKCc2MDQwJyk7CgogICAgZmluYWwgcHVyY2hhc2VzID0gX3BhcVJvd3Moc25hcHNob3RbJ3B1cmNoYXNlcyddKTsKICAgIGZpbmFsIHBheW1lbnRzID0gX3BhcVJvd3Moc25hcHNob3RbJ3BheW1lbnRzJ10pOwogICAgZmluYWwgZXhwZW5zZXMgPSBfcGFxUm93cyhzbmFwc2hvdFsnZXhwZW5zZXMnXSk7CiAgICBmaW5hbCBjbGllbnRCYWxhbmNlcyA9IF9wYXFSb3dzKHNuYXBzaG90WydjbGllbnRCYWxhbmNlcyddKTsKICAgIGZpbmFsIGFnZW50QmFsYW5jZXMgPSBfcGFxUm93cyhzbmFwc2hvdFsnYWdlbnRCYWxhbmNlcyddKTsKICAgIGludCBwdXJjaGFzZUNvdW50ID0gMCwgcGF5bWVudENvdW50ID0gMCwgZXhwZW5zZUNvdW50ID0gMCwgZGVidENvdW50ID0gMDsKCiAgICBhd2FpdCBkYXRhYmFzZS50cmFuc2FjdGlvbigoYikgYXN5bmMgewogICAgICBmaW5hbCBvbGQgPSBhd2FpdCBiLnF1ZXJ5KCd0cmFuc2FjdGlvbnMnLCBjb2x1bW5zOiBbJ2lkJ10sIHdoZXJlOiAicmVmZXJlbmNlIExJS0UgJ1BBUS0lJyIpOwogICAgICBmb3IgKGZpbmFsIHJvdyBpbiBvbGQpIHsKICAgICAgICBhd2FpdCBiLmRlbGV0ZSgnam91cm5hbF9saW5lcycsIHdoZXJlOiAndHJhbnNhY3Rpb25faWQ9PycsIHdoZXJlQXJnczogW3Jvd1snaWQnXV0pOwogICAgICB9CiAgICAgIGF3YWl0IGIuZGVsZXRlKCd0cmFuc2FjdGlvbnMnLCB3aGVyZTogInJlZmVyZW5jZSBMSUtFICdQQVEtJSciKTsKICAgICAgYXdhaXQgYi5kZWxldGUoJ2RlYnRzJywgd2hlcmU6ICJub3RlIExJS0UgJ1NZTkM6UEFROiUnIik7CgogICAgICBGdXR1cmU8dm9pZD4gYWRkVHgoe3JlcXVpcmVkIERhdGVUaW1lIGRhdGUsIHJlcXVpcmVkIFN0cmluZyBkZXNjcmlwdGlvbiwgcmVxdWlyZWQgU3RyaW5nIHJlZmVyZW5jZSwgcmVxdWlyZWQgTGlzdDxNYXA8U3RyaW5nLCBkeW5hbWljPj4gbGluZXN9KSBhc3luYyB7CiAgICAgICAgZmluYWwgdHhJZCA9IGF3YWl0IGIuaW5zZXJ0KCd0cmFuc2FjdGlvbnMnLCB7CiAgICAgICAgICAnZGF0ZSc6IGRhdGUudG9Jc284NjAxU3RyaW5nKCksCiAgICAgICAgICAnZGVzY3JpcHRpb24nOiBkZXNjcmlwdGlvbiwKICAgICAgICAgICdyZWZlcmVuY2UnOiByZWZlcmVuY2UsCiAgICAgICAgICAnY2FzaF9mbG93X2NsYXNzJzogJ29wZXJhdGluZycsCiAgICAgICAgICAnZGVsZXRlZF9hdCc6IG51bGwsCiAgICAgICAgfSk7CiAgICAgICAgZm9yIChmaW5hbCBsaW5lIGluIGxpbmVzKSB7CiAgICAgICAgICBmaW5hbCBkZWJpdCA9IF9wYXFOdW1iZXIobGluZVsnZGViaXQnXSk7CiAgICAgICAgICBmaW5hbCBjcmVkaXQgPSBfcGFxTnVtYmVyKGxpbmVbJ2NyZWRpdCddKTsKICAgICAgICAgIGlmIChkZWJpdCA9PSAwICYmIGNyZWRpdCA9PSAwKSBjb250aW51ZTsKICAgICAgICAgIGF3YWl0IGIuaW5zZXJ0KCdqb3VybmFsX2xpbmVzJywgewogICAgICAgICAgICAndHJhbnNhY3Rpb25faWQnOiB0eElkLAogICAgICAgICAgICAnYWNjb3VudF9pZCc6IGxpbmVbJ2FjY291bnRJZCddLAogICAgICAgICAgICAnZGViaXQnOiBkZWJpdCwKICAgICAgICAgICAgJ2NyZWRpdCc6IGNyZWRpdCwKICAgICAgICAgIH0pOwogICAgICAgIH0KICAgICAgfQoKICAgICAgZm9yIChmaW5hbCBwIGluIHB1cmNoYXNlcykgewogICAgICAgIGZpbmFsIHN0YXR1cyA9ICcke3BbJ3N0YXR1cyddID8/ICcnfSc7CiAgICAgICAgaWYgKHN0YXR1cyA9PSAnUGVuZGllbnRlIGRlIGNvbXByYXInIHx8IHN0YXR1cyA9PSAnQ2FuY2VsYWRvJykgY29udGludWU7CiAgICAgICAgZmluYWwgc3RvcmVDb3N0ID0gX3BhcU51bWJlcihwWyd0b3RhbCddKTsKICAgICAgICB2YXIgY2xpZW50VG90YWwgPSBfcGFxTnVtYmVyKHBbJ2NsaWVudFRvdGFsJ10pOwogICAgICAgIGlmIChzdG9yZUNvc3QgPD0gMCAmJiBjbGllbnRUb3RhbCA8PSAwKSBjb250aW51ZTsKICAgICAgICBpZiAoY2xpZW50VG90YWwgPD0gMCkgY2xpZW50VG90YWwgPSBzdG9yZUNvc3Q7CiAgICAgICAgZmluYWwgbWFyZ2luID0gY2xpZW50VG90YWwgLSBzdG9yZUNvc3Q7CiAgICAgICAgZmluYWwgbGluZXMgPSA8TWFwPFN0cmluZywgZHluYW1pYz4+WwogICAgICAgICAgeydhY2NvdW50SWQnOiByZWNlaXZhYmxlLCAnZGViaXQnOiBjbGllbnRUb3RhbCwgJ2NyZWRpdCc6IDAuMH0sCiAgICAgICAgICB7J2FjY291bnRJZCc6IGNhc2gsICdkZWJpdCc6IDAuMCwgJ2NyZWRpdCc6IHN0b3JlQ29zdH0sCiAgICAgICAgXTsKICAgICAgICBpZiAobWFyZ2luID4gMC4wMDUpIHsKICAgICAgICAgIGxpbmVzLmFkZCh7J2FjY291bnRJZCc6IHNhbGVzLCAnZGViaXQnOiAwLjAsICdjcmVkaXQnOiBtYXJnaW59KTsKICAgICAgICB9IGVsc2UgaWYgKG1hcmdpbiA8IC0wLjAwNSkgewogICAgICAgICAgbGluZXMuYWRkKHsnYWNjb3VudElkJzogY29ncywgJ2RlYml0JzogLW1hcmdpbiwgJ2NyZWRpdCc6IDAuMH0pOwogICAgICAgIH0KICAgICAgICBhd2FpdCBhZGRUeCgKICAgICAgICAgIGRhdGU6IF9wYXFEYXRlKHBbJ2RhdGUnXSksCiAgICAgICAgICBkZXNjcmlwdGlvbjogJ1BhcXVldGVyw61hIMK3IENvbXByYSAke3BbJ3N0b3JlJ10gPz8gJyd9JHsnJHtwWydvcmRlck51bWJlciddID8/ICcnfScudHJpbSgpLmlzRW1wdHkgPyAnJyA6ICcgwrcgJHtwWydvcmRlck51bWJlciddfSd9JywKICAgICAgICAgIHJlZmVyZW5jZTogJ1BBUS1QVVItJHtwWydpZCddfScsCiAgICAgICAgICBsaW5lczogbGluZXMsCiAgICAgICAgKTsKICAgICAgICBwdXJjaGFzZUNvdW50Kys7CiAgICAgIH0KCiAgICAgIGZvciAoZmluYWwgcCBpbiBwYXltZW50cykgewogICAgICAgIGZpbmFsIGFtb3VudCA9IF9wYXFOdW1iZXIocFsnYW1vdW50J10pOwogICAgICAgIGlmIChhbW91bnQgPD0gMCkgY29udGludWU7CiAgICAgICAgYXdhaXQgYWRkVHgoCiAgICAgICAgICBkYXRlOiBfcGFxRGF0ZShwWydkYXRlJ10pLAogICAgICAgICAgZGVzY3JpcHRpb246ICdQYXF1ZXRlcsOtYSDCtyBDb2JybyBkZSBjbGllbnRlJywKICAgICAgICAgIHJlZmVyZW5jZTogJ1BBUS1QQVktJHtwWydpZCddfScsCiAgICAgICAgICBsaW5lczogWwogICAgICAgICAgICB7J2FjY291bnRJZCc6IGNhc2gsICdkZWJpdCc6IGFtb3VudCwgJ2NyZWRpdCc6IDAuMH0sCiAgICAgICAgICAgIHsnYWNjb3VudElkJzogcmVjZWl2YWJsZSwgJ2RlYml0JzogMC4wLCAnY3JlZGl0JzogYW1vdW50fSwKICAgICAgICAgIF0sCiAgICAgICAgKTsKICAgICAgICBwYXltZW50Q291bnQrKzsKICAgICAgfQoKICAgICAgZm9yIChmaW5hbCBlIGluIGV4cGVuc2VzKSB7CiAgICAgICAgZmluYWwgYW1vdW50ID0gX3BhcU51bWJlcihlWydhbW91bnQnXSk7CiAgICAgICAgaWYgKGFtb3VudCA8PSAwKSBjb250aW51ZTsKICAgICAgICBhd2FpdCBhZGRUeCgKICAgICAgICAgIGRhdGU6IF9wYXFEYXRlKGVbJ2RhdGUnXSksCiAgICAgICAgICBkZXNjcmlwdGlvbjogJ1BhcXVldGVyw61hIMK3IEdhc3RvIMK3ICR7ZVsnbmFtZSddID8/ICcnfScsCiAgICAgICAgICByZWZlcmVuY2U6ICdQQVEtRVhQLSR7ZVsnaWQnXX0nLAogICAgICAgICAgbGluZXM6IFsKICAgICAgICAgICAgeydhY2NvdW50SWQnOiBvcGVyYXRpbmdFeHBlbnNlLCAnZGViaXQnOiBhbW91bnQsICdjcmVkaXQnOiAwLjB9LAogICAgICAgICAgICB7J2FjY291bnRJZCc6IGNhc2gsICdkZWJpdCc6IDAuMCwgJ2NyZWRpdCc6IGFtb3VudH0sCiAgICAgICAgICBdLAogICAgICAgICk7CiAgICAgICAgZXhwZW5zZUNvdW50Kys7CiAgICAgIH0KCiAgICAgIGZpbmFsIGR1ZURhdGUgPSBEYXRlVGltZS5ub3coKS5hZGQoY29uc3QgRHVyYXRpb24oZGF5czogMzApKS50b0lzbzg2MDFTdHJpbmcoKTsKICAgICAgZm9yIChmaW5hbCByb3cgaW4gY2xpZW50QmFsYW5jZXMpIHsKICAgICAgICBmaW5hbCBiYWxhbmNlID0gX3BhcU51bWJlcihyb3dbJ2JhbGFuY2UnXSk7CiAgICAgICAgaWYgKGJhbGFuY2UgPD0gMC4wMDUpIGNvbnRpbnVlOwogICAgICAgIGF3YWl0IGIuaW5zZXJ0KCdkZWJ0cycsIHsKICAgICAgICAgICduYW1lJzogJ0NsaWVudGUgwrcgJHtyb3dbJ25hbWUnXSA/PyAnJ30nLAogICAgICAgICAgJ2tpbmQnOiAncmVjZWl2YWJsZScsCiAgICAgICAgICAnYW1vdW50JzogYmFsYW5jZSwKICAgICAgICAgICdkdWVfZGF0ZSc6IGR1ZURhdGUsCiAgICAgICAgICAncGFpZCc6IDAsCiAgICAgICAgICAnbm90ZSc6ICdTWU5DOlBBUTpDTElFTlQ6JHtyb3dbJ2NsaWVudElkJ10gPz8gJyd9JywKICAgICAgICB9KTsKICAgICAgICBkZWJ0Q291bnQrKzsKICAgICAgfQogICAgICBmb3IgKGZpbmFsIHJvdyBpbiBhZ2VudEJhbGFuY2VzKSB7CiAgICAgICAgZmluYWwgYmFsYW5jZSA9IF9wYXFOdW1iZXIocm93WydiYWxhbmNlJ10pOwogICAgICAgIGlmIChiYWxhbmNlIDw9IDAuMDA1KSBjb250aW51ZTsKICAgICAgICBhd2FpdCBiLmluc2VydCgnZGVidHMnLCB7CiAgICAgICAgICAnbmFtZSc6ICdBZ2VudGUgwrcgJHtyb3dbJ25hbWUnXSA/PyAnJ30nLAogICAgICAgICAgJ2tpbmQnOiAncmVjZWl2YWJsZScsCiAgICAgICAgICAnYW1vdW50JzogYmFsYW5jZSwKICAgICAgICAgICdkdWVfZGF0ZSc6IGR1ZURhdGUsCiAgICAgICAgICAncGFpZCc6IDAsCiAgICAgICAgICAnbm90ZSc6ICdTWU5DOlBBUTpBR0VOVDoke3Jvd1snYWdlbnRJZCddID8/ICcnfScsCiAgICAgICAgfSk7CiAgICAgICAgZGVidENvdW50Kys7CiAgICAgIH0KCiAgICAgIGZpbmFsIGdlbmVyYXRlZEF0ID0gJyR7c25hcHNob3RbJ2dlbmVyYXRlZEF0J10gPz8gRGF0ZVRpbWUubm93KCkudG9Jc284NjAxU3RyaW5nKCl9JzsKICAgICAgYXdhaXQgYi5pbnNlcnQoJ3NldHRpbmdzJywgeydrZXknOiAncGFxdWV0ZXJpYV9zbmFwc2hvdCcsICd2YWx1ZSc6IGpzb25FbmNvZGUoc25hcHNob3QpfSwgY29uZmxpY3RBbGdvcml0aG06IENvbmZsaWN0QWxnb3JpdGhtLnJlcGxhY2UpOwogICAgICBhd2FpdCBiLmluc2VydCgnc2V0dGluZ3MnLCB7J2tleSc6ICdwYXF1ZXRlcmlhX3N5bmNfYXQnLCAndmFsdWUnOiBnZW5lcmF0ZWRBdH0sIGNvbmZsaWN0QWxnb3JpdGhtOiBDb25mbGljdEFsZ29yaXRobS5yZXBsYWNlKTsKICAgIH0pOwoKICAgIHJldHVybiBQYXF1ZXRlcmlhU3luY1Jlc3VsdCgKICAgICAgcHVyY2hhc2VzOiBwdXJjaGFzZUNvdW50LAogICAgICBwYXltZW50czogcGF5bWVudENvdW50LAogICAgICBleHBlbnNlczogZXhwZW5zZUNvdW50LAogICAgICBkZWJ0czogZGVidENvdW50LAogICAgICBnZW5lcmF0ZWRBdDogJyR7c25hcHNob3RbJ2dlbmVyYXRlZEF0J10gPz8gJyd9JywKICAgICk7CiAgfQoKICBGdXR1cmU8TWFwPFN0cmluZywgZHluYW1pYz4+IHBhcXVldGVyaWFTbmFwc2hvdCgpIGFzeW5jIHsKICAgIGZpbmFsIHJhdyA9IGF3YWl0IHNldHRpbmcoJ3BhcXVldGVyaWFfc25hcHNob3QnKTsKICAgIGlmIChyYXcudHJpbSgpLmlzRW1wdHkpIHJldHVybiB7fTsKICAgIHRyeSB7CiAgICAgIHJldHVybiBNYXA8U3RyaW5nLCBkeW5hbWljPi5mcm9tKGpzb25EZWNvZGUocmF3KSBhcyBNYXApOwogICAgfSBjYXRjaCAoXykgewogICAgICByZXR1cm4ge307CiAgICB9CiAgfQp9CgpjbGFzcyBQYXF1ZXRlcmlhU3luY1BhZ2UgZXh0ZW5kcyBTdGF0ZWZ1bFdpZGdldCB7CiAgZmluYWwgVm9pZENhbGxiYWNrIG9uQ2hhbmdlZDsKICBjb25zdCBQYXF1ZXRlcmlhU3luY1BhZ2Uoe3N1cGVyLmtleSwgcmVxdWlyZWQgdGhpcy5vbkNoYW5nZWR9KTsKICBAb3ZlcnJpZGUKICBTdGF0ZTxQYXF1ZXRlcmlhU3luY1BhZ2U+IGNyZWF0ZVN0YXRlKCkgPT4gX1BhcXVldGVyaWFTeW5jUGFnZVN0YXRlKCk7Cn0KCmNsYXNzIF9QYXF1ZXRlcmlhU3luY1BhZ2VTdGF0ZSBleHRlbmRzIFN0YXRlPFBhcXVldGVyaWFTeW5jUGFnZT4gewogIGJvb2wgYnVzeSA9IGZhbHNlOwogIE1hcDxTdHJpbmcsIGR5bmFtaWM+IHNuYXBzaG90ID0ge307CgogIEBvdmVycmlkZQogIHZvaWQgaW5pdFN0YXRlKCkgewogICAgc3VwZXIuaW5pdFN0YXRlKCk7CiAgICBsb2FkKCk7CiAgfQoKICBGdXR1cmU8dm9pZD4gbG9hZCgpIGFzeW5jIHsKICAgIGZpbmFsIGRhdGEgPSBhd2FpdCBBcHBEYXRhYmFzZS5pbnN0YW5jZS5wYXF1ZXRlcmlhU25hcHNob3QoKTsKICAgIGlmIChtb3VudGVkKSBzZXRTdGF0ZSgoKSA9PiBzbmFwc2hvdCA9IGRhdGEpOwogIH0KCiAgRnV0dXJlPHZvaWQ+IHN5bmNOb3coKSBhc3luYyB7CiAgICBzZXRTdGF0ZSgoKSA9PiBidXN5ID0gdHJ1ZSk7CiAgICB0cnkgewogICAgICBmaW5hbCByZXN1bHQgPSBhd2FpdCBQYXF1ZXRlcmlhU3luY1NlcnZpY2Uuc3luYygpOwogICAgICBhd2FpdCBsb2FkKCk7CiAgICAgIHdpZGdldC5vbkNoYW5nZWQoKTsKICAgICAgaWYgKCFtb3VudGVkKSByZXR1cm47CiAgICAgIGlmIChyZXN1bHQgPT0gbnVsbCkgewogICAgICAgIFNjYWZmb2xkTWVzc2VuZ2VyLm9mKGNvbnRleHQpLnNob3dTbmFja0Jhcihjb25zdCBTbmFja0Jhcihjb250ZW50OiBUZXh0KCdObyBlbmNvbnRyw6kgZGF0b3MgZGUgUGFxdWV0ZXLDrWEuIEFicmUgUGFxdWV0ZXLDrWEgdW5hIHZleiB5IHZ1ZWx2ZSBhIGludGVudGFyLicpKSk7CiAgICAgIH0gZWxzZSB7CiAgICAgICAgU2NhZmZvbGRNZXNzZW5nZXIub2YoY29udGV4dCkuc2hvd1NuYWNrQmFyKFNuYWNrQmFyKGNvbnRlbnQ6IFRleHQoJ1NpbmNyb25pemFkbzogJHtyZXN1bHQucHVyY2hhc2VzfSBjb21wcmFzLCAke3Jlc3VsdC5wYXltZW50c30gcGFnb3MgeSAke3Jlc3VsdC5leHBlbnNlc30gZ2FzdG9zLicpKSk7CiAgICAgIH0KICAgIH0gb24gUGxhdGZvcm1FeGNlcHRpb24gY2F0Y2ggKGUpIHsKICAgICAgaWYgKG1vdW50ZWQpIFNjYWZmb2xkTWVzc2VuZ2VyLm9mKGNvbnRleHQpLnNob3dTbmFja0JhcihTbmFja0Jhcihjb250ZW50OiBUZXh0KGUubWVzc2FnZSA/PyAnTm8gc2UgcHVkbyBjb25lY3RhciBjb24gUGFxdWV0ZXLDrWEuJykpKTsKICAgIH0gY2F0Y2ggKGUpIHsKICAgICAgaWYgKG1vdW50ZWQpIFNjYWZmb2xkTWVzc2VuZ2VyLm9mKGNvbnRleHQpLnNob3dTbmFja0JhcihTbmFja0Jhcihjb250ZW50OiBUZXh0KCdObyBzZSBwdWRvIHNpbmNyb25pemFyOiAkZScpKSk7CiAgICB9IGZpbmFsbHkgewogICAgICBpZiAobW91bnRlZCkgc2V0U3RhdGUoKCkgPT4gYnVzeSA9IGZhbHNlKTsKICAgIH0KICB9CgogIEBvdmVycmlkZQogIFdpZGdldCBidWlsZChCdWlsZENvbnRleHQgY29udGV4dCkgewogICAgZmluYWwgc3VtbWFyeSA9IHNuYXBzaG90WydzdW1tYXJ5J10gaXMgTWFwID8gTWFwPFN0cmluZywgZHluYW1pYz4uZnJvbShzbmFwc2hvdFsnc3VtbWFyeSddIGFzIE1hcCkgOiA8U3RyaW5nLCBkeW5hbWljPnt9OwogICAgZmluYWwgY2xpZW50cyA9IF9wYXFSb3dzKHNuYXBzaG90WydjbGllbnRCYWxhbmNlcyddKTsKICAgIGZpbmFsIGFnZW50cyA9IF9wYXFSb3dzKHNuYXBzaG90WydhZ2VudEJhbGFuY2VzJ10pOwogICAgZmluYWwgcGFja2FnZXMgPSBfcGFxUm93cyhzbmFwc2hvdFsncGFja2FnZXMnXSk7CiAgICByZXR1cm4gU2NhZmZvbGQoCiAgICAgIGFwcEJhcjogQXBwQmFyKHRpdGxlOiBjb25zdCBUZXh0KCdQYXF1ZXRlcsOtYSBzaW5jcm9uaXphZGEnKSksCiAgICAgIGJvZHk6IExpc3RWaWV3KHBhZGRpbmc6IGNvbnN0IEVkZ2VJbnNldHMuYWxsKDE2KSwgY2hpbGRyZW46IFsKICAgICAgICBDYXJkKGNoaWxkOiBQYWRkaW5nKHBhZGRpbmc6IGNvbnN0IEVkZ2VJbnNldHMuYWxsKDE2KSwgY2hpbGQ6IENvbHVtbihjcm9zc0F4aXNBbGlnbm1lbnQ6IENyb3NzQXhpc0FsaWdubWVudC5zdGFydCwgY2hpbGRyZW46IFsKICAgICAgICAgIFRleHQoJ0NvbmV4acOzbiBsb2NhbCcsIHN0eWxlOiBUaGVtZS5vZihjb250ZXh0KS50ZXh0VGhlbWUudGl0bGVNZWRpdW0/LmNvcHlXaXRoKGZvbnRXZWlnaHQ6IEZvbnRXZWlnaHQuYm9sZCkpLAogICAgICAgICAgY29uc3QgU2l6ZWRCb3goaGVpZ2h0OiA2KSwKICAgICAgICAgIGNvbnN0IFRleHQoJ0xlZSBsb3MgZGF0b3MgZGlyZWN0YW1lbnRlIGRlIGxhIEFQSyBQYXF1ZXRlcsOtYSBpbnN0YWxhZGEgZW4gZXN0ZSB0ZWzDqWZvbm8uIE5vIHVzYSBpbnRlcm5ldC4nKSwKICAgICAgICAgIGNvbnN0IFNpemVkQm94KGhlaWdodDogOCksCiAgICAgICAgICBUZXh0KHNuYXBzaG90LmlzRW1wdHkgPyAnU2luIHNpbmNyb25pemFjacOzbiB0b2RhdsOtYS4nIDogJ8OabHRpbWEgYWN0dWFsaXphY2nDs24gZGUgUGFxdWV0ZXLDrWE6ICR7c25hcHNob3RbJ2dlbmVyYXRlZEF0J10gPz8gJyd9JyksCiAgICAgICAgICBjb25zdCBTaXplZEJveChoZWlnaHQ6IDEyKSwKICAgICAgICAgIEZpbGxlZEJ1dHRvbi5pY29uKG9uUHJlc3NlZDogYnVzeSA/IG51bGwgOiBzeW5jTm93LCBpY29uOiBidXN5ID8gY29uc3QgU2l6ZWRCb3god2lkdGg6IDE4LCBoZWlnaHQ6IDE4LCBjaGlsZDogQ2lyY3VsYXJQcm9ncmVzc0luZGljYXRvcihzdHJva2VXaWR0aDogMikpIDogY29uc3QgSWNvbihJY29ucy5zeW5jKSwgbGFiZWw6IGNvbnN0IFRleHQoJ1NpbmNyb25pemFyIGFob3JhJykpLAogICAgICAgIF0pKSksCiAgICAgICAgY29uc3QgU2l6ZWRCb3goaGVpZ2h0OiAxMiksCiAgICAgICAgaWYgKHNuYXBzaG90LmlzTm90RW1wdHkpIC4uLlsKICAgICAgICAgIENhcmQoY2hpbGQ6IFBhZGRpbmcocGFkZGluZzogY29uc3QgRWRnZUluc2V0cy5hbGwoMTYpLCBjaGlsZDogQ29sdW1uKGNyb3NzQXhpc0FsaWdubWVudDogQ3Jvc3NBeGlzQWxpZ25tZW50LnN0YXJ0LCBjaGlsZHJlbjogWwogICAgICAgICAgICBUZXh0KCdSZXN1bWVuIGRlIFBhcXVldGVyw61hJywgc3R5bGU6IFRoZW1lLm9mKGNvbnRleHQpLnRleHRUaGVtZS50aXRsZU1lZGl1bT8uY29weVdpdGgoZm9udFdlaWdodDogRm9udFdlaWdodC5ib2xkKSksCiAgICAgICAgICAgIGNvbnN0IFNpemVkQm94KGhlaWdodDogOCksCiAgICAgICAgICAgIFRleHQoJ0NvbXByYXM6ICR7X3BhcVJvd3Moc25hcHNob3RbJ3B1cmNoYXNlcyddKS5sZW5ndGh9IMK3IGNvc3RvICR7X21vbmV5KF9wYXFOdW1iZXIoc3VtbWFyeVsncHVyY2hhc2VDb3N0J10pKX0nKSwKICAgICAgICAgICAgVGV4dCgnQ29icmFkby9yZWdpc3RyYWRvIGEgY2xpZW50ZXM6ICR7X21vbmV5KF9wYXFOdW1iZXIoc3VtbWFyeVsncHVyY2hhc2VDbGllbnRUb3RhbCddKSl9JyksCiAgICAgICAgICAgIFRleHQoJ1BlbmRpZW50ZSBkZSBjbGllbnRlczogJHtfbW9uZXkoX3BhcU51bWJlcihzdW1tYXJ5WydjbGllbnRSZWNlaXZhYmxlcyddKSl9JyksCiAgICAgICAgICAgIFRleHQoJ1BlbmRpZW50ZSBkZSBhZ2VudGVzOiAke19tb25leShfcGFxTnVtYmVyKHN1bW1hcnlbJ2FnZW50UmVjZWl2YWJsZXMnXSkpfScpLAogICAgICAgICAgICBUZXh0KCdQYXF1ZXRlczogJHtwYWNrYWdlcy5sZW5ndGh9IMK3ICR7X3BhcU51bWJlcihzdW1tYXJ5WydwYWNrYWdlV2VpZ2h0TGInXSkudG9TdHJpbmdBc0ZpeGVkKDEpfSBsYicpLAogICAgICAgICAgICBUZXh0KCdHYXN0b3MgZ2VuZXJhbGVzOiAke19tb25leShfcGFxTnVtYmVyKHN1bW1hcnlbJ2dlbmVyYWxFeHBlbnNlcyddKSl9JyksCiAgICAgICAgICAgIFRleHQoJ1Jlc3VsdGFkbyBlc3RpbWFkbyBkZSB2aWFqZXM6ICR7X21vbmV5KF9wYXFOdW1iZXIoc3VtbWFyeVsndHJpcFByb2ZpdEVzdGltYXRlZCddKSl9JyksCiAgICAgICAgICAgIFRleHQoJ1Jlc3VsdGFkbyBlc3RpbWFkbyBwb3IgYWdlbmNpYXM6ICR7X21vbmV5KF9wYXFOdW1iZXIoc3VtbWFyeVsnYWdlbmN5UHJvZml0RXN0aW1hdGVkJ10pKX0nKSwKICAgICAgICAgIF0pKSksCiAgICAgICAgICBjb25zdCBTaXplZEJveChoZWlnaHQ6IDEyKSwKICAgICAgICAgIENhcmQoY2hpbGQ6IEV4cGFuc2lvblRpbGUodGl0bGU6IFRleHQoJ1BlbmRpZW50ZXMgZGUgY2xpZW50ZXMgKCR7Y2xpZW50cy53aGVyZSgoZSkgPT4gX3BhcU51bWJlcihlWydiYWxhbmNlJ10pID4gMC4wMDUpLmxlbmd0aH0pJyksIGNoaWxkcmVuOiBbCiAgICAgICAgICAgIGZvciAoZmluYWwgYyBpbiBjbGllbnRzLndoZXJlKChlKSA9PiBfcGFxTnVtYmVyKGVbJ2JhbGFuY2UnXSkgPiAwLjAwNSkpCiAgICAgICAgICAgICAgTGlzdFRpbGUodGl0bGU6IFRleHQoJyR7Y1snbmFtZSddfScpLCB0cmFpbGluZzogVGV4dChfbW9uZXkoX3BhcU51bWJlcihjWydiYWxhbmNlJ10pKSkpLAogICAgICAgICAgXSkpLAogICAgICAgICAgQ2FyZChjaGlsZDogRXhwYW5zaW9uVGlsZSh0aXRsZTogVGV4dCgnUGVuZGllbnRlcyBkZSBhZ2VudGVzICgke2FnZW50cy53aGVyZSgoZSkgPT4gX3BhcU51bWJlcihlWydiYWxhbmNlJ10pID4gMC4wMDUpLmxlbmd0aH0pJyksIGNoaWxkcmVuOiBbCiAgICAgICAgICAgIGZvciAoZmluYWwgYSBpbiBhZ2VudHMud2hlcmUoKGUpID0+IF9wYXFOdW1iZXIoZVsnYmFsYW5jZSddKSA+IDAuMDA1KSkKICAgICAgICAgICAgICBMaXN0VGlsZSh0aXRsZTogVGV4dCgnJHthWyduYW1lJ119JyksIHRyYWlsaW5nOiBUZXh0KF9tb25leShfcGFxTnVtYmVyKGFbJ2JhbGFuY2UnXSkpKSksCiAgICAgICAgICBdKSksCiAgICAgICAgICBDYXJkKGNoaWxkOiBFeHBhbnNpb25UaWxlKHRpdGxlOiBUZXh0KCdQYXF1ZXRlcyAoJHtwYWNrYWdlcy5sZW5ndGh9KScpLCBjaGlsZHJlbjogWwogICAgICAgICAgICBmb3IgKGZpbmFsIHAgaW4gcGFja2FnZXMudGFrZSg1MCkpCiAgICAgICAgICAgICAgTGlzdFRpbGUodGl0bGU6IFRleHQoJyR7cFsndHJhY2tpbmcnXSA/PyAnU2luIHRyYWNraW5nJ30nKSwgc3VidGl0bGU6IFRleHQoJyR7cFsnc3RhdHVzJ10gPz8gJyd9IMK3ICR7X3BhcU51bWJlcihwWydiaWxsV2VpZ2h0J10pLnRvU3RyaW5nQXNGaXhlZCgxKX0gbGInKSksCiAgICAgICAgICBdKSksCiAgICAgICAgICBjb25zdCBTaXplZEJveChoZWlnaHQ6IDgpLAogICAgICAgICAgY29uc3QgVGV4dCgnTG9zIHZpYWplcyB5IGVudsOtb3MgcG9yIGFnZW5jaWEgc2UgbXVlc3RyYW4gY29tbyBlc3RpbWFkb3MgeSBubyBzZSBjb252aWVydGVuIGF1dG9tw6F0aWNhbWVudGUgZW4gYXNpZW50b3MgY29udGFibGVzLiBMYXMgY29tcHJhcyByZWFsaXphZGFzLCBwYWdvcyBkZSBjbGllbnRlcyB5IGdhc3RvcyBnZW5lcmFsZXMgc8OtIHNlIGFjdHVhbGl6YW4gZW4gbGEgY29udGFiaWxpZGFkIGNvbiByZWZlcmVuY2lhcyBQQVEtIHBhcmEgZXZpdGFyIGR1cGxpY2Fkb3MuJywgc3R5bGU6IFRleHRTdHlsZShmb250U2l6ZTogMTIpKSwKICAgICAgICBdLAogICAgICBdKSwKICAgICk7CiAgfQoKICBTdHJpbmcgX21vbmV5KGRvdWJsZSB2YWx1ZSkgPT4gJ1VTRCAke3ZhbHVlLnRvU3RyaW5nQXNGaXhlZCgyKX0nOwp9Cg==' | base64 -d > finanzas_definitiva/lib/paqueteria_sync.dart
           python3 - <<'PY'
           from pathlib import Path
+          import re
+          sync=Path('finanzas_definitiva/lib/paqueteria_sync.dart')
+          ss=sync.read_text()
+          if "import 'package:sqflite/sqflite.dart';" not in ss:
+              ss=ss.replace("import 'package:flutter/services.dart';", "import 'package:flutter/services.dart';\nimport 'package:sqflite/sqflite.dart';")
+          sync.write_text(ss)
           main=Path('finanzas_definitiva/lib/main.dart')
           s=main.read_text()
           if "import 'paqueteria_sync.dart';" not in s:
-              s=s.replace("import 'manager_pages.dart';", "import 'manager_pages.dart';\nimport 'paqueteria_sync.dart';")
+              marker="import 'manager_pages.dart';"
+              if marker not in s: raise SystemExit('No se encontro import manager_pages.dart')
+              s=s.replace(marker, marker+"\nimport 'paqueteria_sync.dart';")
           old="class _HomePageState extends State<HomePage> {\n  int index = 0, revision = 0;"
-          new="""class _HomePageState extends State<HomePage> {
-            @override
-            void initState() {
-              super.initState();
-              Future.microtask(() async {
-                final result = await PaqueteriaSyncService.sync(silent: true);
-                if (result != null && mounted) refresh();
-              });
-            }
-            int index = 0, revision = 0;"""
           if old in s:
+              new="class _HomePageState extends State<HomePage> {\n  @override\n  void initState() {\n    super.initState();\n    Future.microtask(() async {\n      final result = await PaqueteriaSyncService.sync(silent: true);\n      if (result != null && mounted) refresh();\n    });\n  }\n  int index = 0, revision = 0;"
               s=s.replace(old,new)
-          sync_tile="ListTile(leading:const Icon(Icons.sync_alt),title:const Text('Sincronizar con Paquetería'),subtitle:const Text('Compras, paquetes, pendientes, agentes y gastos'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>PaqueteriaSyncPage(onChanged:widget.onChanged)))),\n      "
-          marker="ListTile(leading:const Icon(Icons.account_tree_outlined),title:const Text('Catálogo de cuentas')"
-          if "Sincronizar con Paquetería" not in s and marker in s:
-              s=s.replace(marker,sync_tile+marker)
+          if 'Sincronizar con Paquetería' not in s:
+              marker="      ListTile(leading:const Icon(Icons.account_tree_outlined),title:const Text('Catálogo de cuentas')"
+              if marker not in s: raise SystemExit('No se encontro Catálogo de cuentas')
+              tile="      ListTile(leading:const Icon(Icons.sync_alt),title:const Text('Sincronizar con Paquetería'),subtitle:const Text('Compras, paquetes, pendientes, agentes y gastos'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>PaqueteriaSyncPage(onChanged:widget.onChanged)))),\n"
+              s=s.replace(marker,tile+marker)
           main.write_text(s)
-
           pub=Path('finanzas_definitiva/pubspec.yaml')
           ps=pub.read_text()
-          import re
-          ps=re.sub(r'^version:.*        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Crear archivos Android
-        working-directory: finanzas_definitiva
-        run: flutter create . --platforms=android --org com.angel.finanzas
-
-
-      - name: Conectar Android con Paqueteria
-        working-directory: finanzas_definitiva
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          manifest=Path('android/app/src/main/AndroidManifest.xml')
-          m=manifest.read_text()
-          perm='com.angelapps.paqueteria.permission.FINANCE_SYNC'
-          if perm not in m:
-              m=m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="'+perm+'" />')
-          if 'com.angelapps.paqueteria.finance_sync' not in m:
-              q='''    <queries>
-        <provider android:authorities="com.angelapps.paqueteria.finance_sync" />
-    </queries>
-'''
-              m=m.replace('    <application', q+'    <application', 1)
-          manifest.write_text(m)
-
-          kotlin=Path('android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva/MainActivity.kt')
-          kotlin.parent.mkdir(parents=True, exist_ok=True)
-          kotlin.write_text(r'''package com.angel.finanzas.finanzas_definitiva
-
-import android.net.Uri
-import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
-
-class MainActivity : FlutterActivity() {
-    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.angel.finanzas/paqueteria_sync")
-            .setMethodCallHandler { call, result ->
-                if (call.method != "readSnapshot") {
-                    result.notImplemented()
-                    return@setMethodCallHandler
-                }
-                try {
-                    val uri = Uri.parse("content://com.angelapps.paqueteria.finance_sync/snapshot")
-                    val stream = contentResolver.openInputStream(uri)
-                    if (stream == null) {
-                        result.error("PAQUETERIA_NOT_AVAILABLE", "No encontré la aplicación Paquetería o todavía no tiene datos para sincronizar.", null)
-                    } else {
-                        val text = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                        result.success(text)
-                    }
-                } catch (e: SecurityException) {
-                    result.error("PAQUETERIA_PERMISSION", "Finanzas no tiene permiso para leer los datos locales de Paquetería. Actualiza ambas aplicaciones.", null)
-                } catch (e: Exception) {
-                    result.error("PAQUETERIA_NOT_AVAILABLE", "No pude leer Paquetería: " + (e.message ?: "error desconocido"), null)
-                }
-            }
-    }
-}
-''')
-          PY
-
-      - name: Descargar dependencias
-        working-directory: finanzas_definitiva
-        run: flutter pub get
-        
-      - name: Generar icono de la aplicacion
-        working-directory: finanzas_definitiva
-        run: dart run flutter_launcher_icons
-        
-      - name: Ejecutar pruebas
-        working-directory: finanzas_definitiva
-        run: flutter test
-
-      - name: Compilar APK
-        working-directory: finanzas_definitiva
-        run: flutter build apk --release
-
-      - name: Guardar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Finanzas-Definitiva-APK
-          path: finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk
-, 'version: 2.1.0+6', ps, flags=re.M)
+          ps=re.sub(r'^version:.*$', 'version: 2.1.0+6', ps, flags=re.M)
           pub.write_text(ps)
           PY
 
@@ -153,14 +63,36 @@ class MainActivity : FlutterActivity() {
         working-directory: finanzas_definitiva
         run: flutter create . --platforms=android --org com.angel.finanzas
 
+      - name: Conectar Android con Paqueteria
+        working-directory: finanzas_definitiva
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva
+          echo 'cGFja2FnZSBjb20uYW5nZWwuZmluYW56YXMuZmluYW56YXNfZGVmaW5pdGl2YQoKaW1wb3J0IGFuZHJvaWQubmV0LlVyaQppbXBvcnQgaW8uZmx1dHRlci5lbWJlZGRpbmcuYW5kcm9pZC5GbHV0dGVyQWN0aXZpdHkKaW1wb3J0IGlvLmZsdXR0ZXIuZW1iZWRkaW5nLmVuZ2luZS5GbHV0dGVyRW5naW5lCmltcG9ydCBpby5mbHV0dGVyLnBsdWdpbi5jb21tb24uTWV0aG9kQ2hhbm5lbAoKY2xhc3MgTWFpbkFjdGl2aXR5IDogRmx1dHRlckFjdGl2aXR5KCkgewogICAgb3ZlcnJpZGUgZnVuIGNvbmZpZ3VyZUZsdXR0ZXJFbmdpbmUoZmx1dHRlckVuZ2luZTogRmx1dHRlckVuZ2luZSkgewogICAgICAgIHN1cGVyLmNvbmZpZ3VyZUZsdXR0ZXJFbmdpbmUoZmx1dHRlckVuZ2luZSkKICAgICAgICBNZXRob2RDaGFubmVsKGZsdXR0ZXJFbmdpbmUuZGFydEV4ZWN1dG9yLmJpbmFyeU1lc3NlbmdlciwgImNvbS5hbmdlbC5maW5hbnphcy9wYXF1ZXRlcmlhX3N5bmMiKQogICAgICAgICAgICAuc2V0TWV0aG9kQ2FsbEhhbmRsZXIgeyBjYWxsLCByZXN1bHQgLT4KICAgICAgICAgICAgICAgIGlmIChjYWxsLm1ldGhvZCAhPSAicmVhZFNuYXBzaG90IikgewogICAgICAgICAgICAgICAgICAgIHJlc3VsdC5ub3RJbXBsZW1lbnRlZCgpCiAgICAgICAgICAgICAgICAgICAgcmV0dXJuQHNldE1ldGhvZENhbGxIYW5kbGVyCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICB0cnkgewogICAgICAgICAgICAgICAgICAgIHZhbCB1cmkgPSBVcmkucGFyc2UoImNvbnRlbnQ6Ly9jb20uYW5nZWxhcHBzLnBhcXVldGVyaWEuZmluYW5jZV9zeW5jL3NuYXBzaG90IikKICAgICAgICAgICAgICAgICAgICB2YWwgc3RyZWFtID0gY29udGVudFJlc29sdmVyLm9wZW5JbnB1dFN0cmVhbSh1cmkpCiAgICAgICAgICAgICAgICAgICAgaWYgKHN0cmVhbSA9PSBudWxsKSB7CiAgICAgICAgICAgICAgICAgICAgICAgIHJlc3VsdC5lcnJvcigiUEFRVUVURVJJQV9OT1RfQVZBSUxBQkxFIiwgIk5vIGVuY29udHLDqSBsYSBhcGxpY2FjacOzbiBQYXF1ZXRlcsOtYSBvIHRvZGF2w61hIG5vIHRpZW5lIGRhdG9zIHBhcmEgc2luY3Jvbml6YXIuIiwgbnVsbCkKICAgICAgICAgICAgICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAgICAgICAgICAgICB2YWwgdGV4dCA9IHN0cmVhbS5idWZmZXJlZFJlYWRlcihDaGFyc2V0cy5VVEZfOCkudXNlIHsgaXQucmVhZFRleHQoKSB9CiAgICAgICAgICAgICAgICAgICAgICAgIHJlc3VsdC5zdWNjZXNzKHRleHQpCiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgfSBjYXRjaCAoZTogU2VjdXJpdHlFeGNlcHRpb24pIHsKICAgICAgICAgICAgICAgICAgICByZXN1bHQuZXJyb3IoIlBBUVVFVEVSSUFfUEVSTUlTU0lPTiIsICJGaW5hbnphcyBubyB0aWVuZSBwZXJtaXNvIHBhcmEgbGVlciBsb3MgZGF0b3MgbG9jYWxlcyBkZSBQYXF1ZXRlcsOtYS4gQWN0dWFsaXphIGFtYmFzIGFwbGljYWNpb25lcy4iLCBudWxsKQogICAgICAgICAgICAgICAgfSBjYXRjaCAoZTogRXhjZXB0aW9uKSB7CiAgICAgICAgICAgICAgICAgICAgcmVzdWx0LmVycm9yKCJQQVFVRVRFUklBX05PVF9BVkFJTEFCTEUiLCAiTm8gcHVkZSBsZWVyIFBhcXVldGVyw61hOiAiICsgKGUubWVzc2FnZSA/OiAiZXJyb3IgZGVzY29ub2NpZG8iKSwgbnVsbCkKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQogICAgfQp9Cg==' | base64 -d > android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva/MainActivity.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest=Path('android/app/src/main/AndroidManifest.xml')
+          m=manifest.read_text()
+          perm='com.angelapps.paqueteria.permission.FINANCE_SYNC'
+          if perm not in m:
+              m=m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">','<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="'+perm+'" />')
+          if 'com.angelapps.paqueteria.finance_sync' not in m:
+              q='    <queries>\n        <provider android:authorities="com.angelapps.paqueteria.finance_sync" />\n    </queries>\n'
+              m=m.replace('    <application',q+'    <application',1)
+          manifest.write_text(m)
+          PY
+
       - name: Descargar dependencias
         working-directory: finanzas_definitiva
         run: flutter pub get
-        
+
+      - name: Analizar código
+        working-directory: finanzas_definitiva
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+
       - name: Generar icono de la aplicacion
         working-directory: finanzas_definitiva
         run: dart run flutter_launcher_icons
-        
+
       - name: Ejecutar pruebas
         working-directory: finanzas_definitiva
         run: flutter test
@@ -174,3 +106,4 @@ class MainActivity : FlutterActivity() {
         with:
           name: Finanzas-Definitiva-APK
           path: finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
