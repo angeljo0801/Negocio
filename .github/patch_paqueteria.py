@@ -130,11 +130,11 @@ tracking.write_text(tr)
 
 manifest = Path('app/android/app/src/main/AndroidManifest.xml')
 m = manifest.read_text()
-permissions = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.VIBRATE" />'''
+permissions = '''<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.READ_CONTACTS" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.VIBRATE" />'''
 if 'android.permission.INTERNET' not in m:
     m = m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', permissions)
 else:
-    for perm in ['POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE']:
+    for perm in ['READ_CONTACTS', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE']:
         if f'android.permission.{perm}' not in m:
             m = m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', f'<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.{perm}" />')
 m = m.replace('android:label="paqueteria"', 'android:label="Paquetería"')
