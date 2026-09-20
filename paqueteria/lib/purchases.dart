@@ -1,5 +1,11 @@
 part of 'main.dart';
 
+String purchasePhotoPath(Map<String, dynamic> purchase) {
+  final photo = '${purchase['photoPath'] ?? ''}'.trim();
+  if (photo.isNotEmpty) return photo;
+  return '${purchase['receiptPath'] ?? ''}'.trim();
+}
+
 class PurchasesPage extends StatefulWidget {
   const PurchasesPage({super.key});
   @override
@@ -33,7 +39,20 @@ class _PurchasesPageState extends State<PurchasesPage> {
                 itemBuilder: (_, i) {
                   final p = rows[i];
                   return ListTile(
-                    leading: Icon(p['type'] == 'En tienda' ? Icons.store : Icons.shopping_cart),
+                    leading: Builder(builder: (_) {
+                      final path = purchasePhotoPath(p);
+                      if (path.isNotEmpty && File(path).existsSync()) {
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(File(path), width: 52, height: 52, fit: BoxFit.cover),
+                        );
+                      }
+                      return SizedBox(
+                        width: 52,
+                        height: 52,
+                        child: Icon(p['type'] == 'En tienda' ? Icons.store : Icons.shopping_cart),
+                      );
+                    }),
                     title: Text('${p['store']} · ${money(number(p['clientTotal']))}'),
                     subtitle: Text('${buyers(p)} · ${p['status']}\n${p['description']}'),
                     isThreeLine: true,
@@ -162,7 +181,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
   String? clientId;
   String type = 'Online', status = 'Pendiente de comprar';
   double commission = 0;
-  String receiptPath = '', ocrText = '';
+  String receiptPath = '', ocrText = '', photoPath = '';
   bool loaded = false;
 
   @override
@@ -183,6 +202,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       total.text = '${widget.existing!['total'] ?? ''}';
       order.text = '${widget.existing!['orderNumber'] ?? ''}';
       receiptPath = '${widget.existing!['receiptPath'] ?? ''}';
+      photoPath = '${widget.existing!['photoPath'] ?? ''}';
       ocrText = '${widget.existing!['ocrText'] ?? ''}';
       items = purchaseItems(widget.existing!);
     }
@@ -190,6 +210,39 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
     if (widget.startWithReceipt && widget.existing == null && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) => importReceipt());
     }
+  }
+
+  Future<void> pickPurchasePhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Wrap(children: [
+          ListTile(
+            leading: const Icon(Icons.camera_alt),
+            title: const Text('Tomar foto'),
+            subtitle: const Text('Foto del producto, compra o ticket'),
+            onTap: () => Navigator.pop(context, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Elegir de galería'),
+            subtitle: const Text('Screenshot, ticket o foto de la compra'),
+            onTap: () => Navigator.pop(context, ImageSource.gallery),
+          ),
+        ]),
+      ),
+    );
+    if (source == null) return;
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 88);
+    if (picked == null) return;
+
+    final dir = await getApplicationDocumentsDirectory();
+    final lower = picked.path.toLowerCase();
+    final ext = lower.endsWith('.png') ? 'png' : lower.endsWith('.webp') ? 'webp' : 'jpg';
+    final target = '${dir.path}/purchase_photo_${DateTime.now().millisecondsSinceEpoch}.$ext';
+    await File(picked.path).copy(target);
+    if (!mounted) return;
+    setState(() => photoPath = target);
   }
 
   Future<void> importReceipt() async {
@@ -205,6 +258,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
     if (r == null || !mounted) return;
     setState(() {
       receiptPath = r.path;
+      if (photoPath.isEmpty) photoPath = r.path;
       ocrText = r.text;
       if (store.text.trim().isEmpty || store.text == 'Otra tienda') store.text = r.store;
       if (r.total > 0) total.text = r.total.toStringAsFixed(2);
@@ -322,6 +376,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       'orderNumber': order.text.trim(),
       'date': date.text.trim().isEmpty ? today() : date.text.trim(),
       'receiptPath': receiptPath,
+      'photoPath': photoPath,
       'ocrText': ocrText,
       'items': items,
       'allocations': allocations,
@@ -362,12 +417,50 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
         ],
       ),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        FilledButton.tonalIcon(onPressed: importReceipt, icon: const Icon(Icons.document_scanner), label: Text(receiptPath.isEmpty ? 'Leer ticket / screenshot' : 'Volver a leer ticket')),
+        Text('Foto del pedido / compra', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 6),
+        const Text('Opcional. Puedes guardar una foto del producto, screenshot de la compra o ticket para tenerla junto al registro.'),
+        const SizedBox(height: 10),
+        if (photoPath.isNotEmpty && File(photoPath).existsSync()) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.file(File(photoPath), height: 210, width: double.infinity, fit: BoxFit.cover),
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: pickPurchasePhoto,
+                icon: const Icon(Icons.change_circle_outlined),
+                label: const Text('Cambiar foto'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () => setState(() => photoPath = ''),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Quitar'),
+            ),
+          ]),
+        ] else
+          FilledButton.tonalIcon(
+            onPressed: pickPurchasePhoto,
+            icon: const Icon(Icons.add_a_photo_outlined),
+            label: const Text('Añadir foto (opcional)'),
+          ),
+        const SizedBox(height: 12),
+        FilledButton.tonalIcon(
+          onPressed: importReceipt,
+          icon: const Icon(Icons.document_scanner),
+          label: Text(receiptPath.isEmpty ? 'Leer ticket / screenshot con OCR' : 'Volver a leer ticket con OCR'),
+        ),
         if (receiptPath.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(receiptPath), height: 150, fit: BoxFit.cover)),
           const SizedBox(height: 6),
           const Text('El OCR puede equivocarse. Revisa artículos, precios y total antes de guardar.', style: TextStyle(fontSize: 12)),
+          if (receiptPath != photoPath && File(receiptPath).existsSync()) ...[
+            const SizedBox(height: 8),
+            ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(receiptPath), height: 130, fit: BoxFit.cover)),
+          ],
         ],
         const SizedBox(height: 12),
         _drop('Cliente predeterminado', clientId, clients.map((c) => DropdownMenuItem(value: '${c['id']}', child: Text('${c['name']}'))).toList(), (v) => setState(() {
