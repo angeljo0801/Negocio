@@ -555,57 +555,10 @@ class StoreOcrParser {
           .where((e) => e.trim().isNotEmpty)
           .toList();
 
-      // Short isolated words are commonly text printed inside product photos
-      // rather than the actual product title.
       if (words.length == 1 && value.length < 12) return false;
 
       if (RegExp(
-        r'^(STAR\s+STORE|APPLIED|ALMOST\s+SOLD\s+OUT)(\s+.*)?
-
-  static double _quantityNear(List<String> lines, int index) {
-    final from = index > 0 ? index - 1 : 0;
-    final to =
-        index + 2 < lines.length ? index + 2 : lines.length - 1;
-    final qtyPattern = RegExp(
-      r'\b(?:QTY|QUANTITY|CANT(?:IDAD)?)\s*[:xX\-]?\s*(\d{1,3})\b',
-      caseSensitive: false,
-    );
-    for (var i = from; i <= to; i++) {
-      final match = qtyPattern.firstMatch(lines[i]);
-      if (match == null) continue;
-      final qty = double.tryParse(match.group(1) ?? '');
-      if (qty != null && qty > 0 && qty <= 99) return qty;
-    }
-    return 1.0;
-  }
-
-  static List<_OcrMoneyToken> _moneyTokens(String line) {
-    final out = <_OcrMoneyToken>[];
-    for (final match in _money.allMatches(line)) {
-      final raw = match.group(1);
-      if (raw == null) continue;
-      final value = _parseMoney(raw);
-      if (value == null) continue;
-      out.add(_OcrMoneyToken(value, match.start, match.end));
-    }
-    return out;
-  }
-
-  static double? _parseMoney(String raw) {
-    var value = raw.replaceAll(RegExp(r'[^0-9,.\-]'), '');
-    if (value.contains(',') && !value.contains('.')) {
-      if (RegExp(r',\d{2}$').hasMatch(value)) {
-        value = value.replaceAll(',', '.');
-      } else {
-        value = value.replaceAll(',', '');
-      }
-    } else {
-      value = value.replaceAll(',', '');
-    }
-    return double.tryParse(value);
-  }
-}
-,
+        r'^(STAR\s+STORE|APPLIED|ALMOST\s+SOLD\s+OUT)(\s+.*)?$',
         caseSensitive: false,
       ).hasMatch(value)) {
         return false;
