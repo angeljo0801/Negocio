@@ -60,11 +60,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Rename APK
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v2.3.1.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v2.3.2.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Paqueteria-v2.3.1-APK
-          path: Paqueteria-v2.3.1.apk
+          name: Paqueteria-v2.3.2-APK
+          path: Paqueteria-v2.3.2.apk
           retention-days: 30

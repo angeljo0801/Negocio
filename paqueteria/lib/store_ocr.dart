@@ -166,10 +166,12 @@ class StoreOcrParser {
         [RegExp(r'\b(ORDER\s+TOTAL|GRAND\s+TOTAL)\b', caseSensitive: false)],
       );
       if (total == 0) {
-        total = _amountNearAction(
+        total = _checkoutFooterAmount(
           lines,
-          ['ORDER AND PAY'],
+          action: 'ORDER AND PAY',
+          startMarker: 'PAYMENT METHODS',
           preferFirstOnLine: false,
+          preferLowerWhenMultiple: true,
         );
       }
     } else {
@@ -201,7 +203,7 @@ class StoreOcrParser {
     }
 
     final orderNumber = _orderNumber(lines, upper);
-    final items = _extractItems(lines);
+    final items = _extractItems(lines, store);
 
     if (subtotal == 0 && items.isNotEmpty) {
       subtotal = items.fold<double>(
@@ -211,8 +213,16 @@ class StoreOcrParser {
       );
     }
     if (total == 0 && subtotal > 0) {
-      final calculated = subtotal + tax + shipping - discount;
-      if (calculated > 0) total = calculated;
+      final online = const {'Amazon', 'AliExpress', 'Temu', 'SHEIN'}.contains(store);
+      final completeItemSet =
+          expectedItems == 0 || (items.isNotEmpty && items.length >= expectedItems);
+      // For long online checkout screenshots, a partial OCR list must never
+      // become the order total. It is safer to leave total unconfirmed than
+      // to sum only the products that happened to be recognized.
+      if (!online || completeItemSet) {
+        final calculated = subtotal + tax + shipping - discount;
+        if (calculated > 0) total = calculated;
+      }
     }
 
     final warnings = <String>[];
@@ -358,6 +368,7 @@ class StoreOcrParser {
     required String action,
     required String startMarker,
     required bool preferFirstOnLine,
+    bool preferLowerWhenMultiple = false,
   }) {
     var actionIndex = -1;
     for (var i = lines.length - 1; i >= 0; i--) {
@@ -384,6 +395,14 @@ class StoreOcrParser {
       if (_isPromoLine(upper)) continue;
       final values = _moneyTokens(lines[i]);
       if (values.length >= 2) {
+        final positive = values.map((e) => e.value.abs()).where((e) => e > 0).toList();
+        if (positive.isEmpty) continue;
+        if (preferLowerWhenMultiple) {
+          // Temu commonly shows the old crossed-out checkout amount beside
+          // the current discounted amount. The payable amount is the lower one.
+          positive.sort();
+          return positive.first;
+        }
         return (preferFirstOnLine ? values.first.value : values.last.value)
             .abs();
       }
@@ -394,7 +413,11 @@ class StoreOcrParser {
     // selected as the order total.
     for (var i = actionIndex; i >= startIndex; i--) {
       final upper = lines[i].toUpperCase();
-      if (_isPromoLine(upper)) continue;
+      if (_isPromoLine(upper) ||
+          upper.contains('SHIPPING') ||
+          upper.contains('DELIVERY')) {
+        continue;
+      }
       final values = _moneyTokens(lines[i]);
       if (values.isEmpty) continue;
       return (preferFirstOnLine ? values.first.value : values.last.value)
@@ -434,10 +457,12 @@ class StoreOcrParser {
       upper.contains('APPLIED') ||
       upper.contains('COUPON') ||
       upper.contains('% OFF') ||
-      upper.contains('POINTS');
+      upper.contains('POINTS') ||
+      upper.contains('APPLIED');
 
   static List<Map<String, dynamic>> _extractItems(
     List<String> lines,
+    String store,
   ) {
     final items = <Map<String, dynamic>>[];
     final seen = <String>{};
@@ -454,20 +479,20 @@ class StoreOcrParser {
         line.substring(0, tokens.first.start),
       );
 
-      if (!_isProductName(name)) {
+      if (!_isProductName(name, store)) {
         for (var back = 1; back <= 2; back++) {
           final index = i - back;
           if (index < 0) break;
           final previous = _cleanProductName(lines[index]);
           if (_moneyTokens(previous).isNotEmpty) continue;
-          if (_isProductName(previous)) {
+          if (_isProductName(previous, store)) {
             name = previous;
             break;
           }
         }
       }
 
-      if (!_isProductName(name)) continue;
+      if (!_isProductName(name, store)) continue;
 
       final price = tokens.first.value.abs();
       if (price <= 0) continue;
@@ -490,7 +515,7 @@ class StoreOcrParser {
 
   static bool _isStructuralLine(String upper) {
     return RegExp(
-      r'\b(TOTAL|SUBTOTAL|TAX|SHIPPING|DELIVERY|PAYMENT|MASTERCARD|VISA|PAYPAL|VENMO|CHECKOUT|PLACE ORDER|ORDER AND PAY|ORDER CONFIRMATION|SHIPPING ADDRESS|BILLING ADDRESS|SHIP FROM|SHIPS FROM|FREE SHIPPING|COURIER|PROMO CODE|SUMMARY|SAVED|SAVE|DISCOUNT|COUPON|POINTS|LOCAL WAREHOUSE|NO IMPORT CHARGES|GREAT DEAL|LIMITED TIME|ALMOST SOLD OUT|LEFT)\b',
+      r'\b(TOTAL|SUBTOTAL|TAX|SHIPPING|DELIVERY|PAYMENT|MASTERCARD|VISA|PAYPAL|VENMO|CHECKOUT|PLACE ORDER|ORDER AND PAY|ORDER CONFIRMATION|SHIPPING ADDRESS|BILLING ADDRESS|SHIP FROM|SHIPS FROM|FREE SHIPPING|COURIER|PROMO CODE|SUMMARY|SAVED|SAVE|DISCOUNT|COUPON|POINTS|APPLIED|LOCAL WAREHOUSE|NO IMPORT CHARGES|GREAT DEAL|LIMITED TIME|ALMOST SOLD OUT|STAR STORE|LEFT)\b',
       caseSensitive: false,
     ).hasMatch(upper);
   }
@@ -513,7 +538,7 @@ class StoreOcrParser {
     return value;
   }
 
-  static bool _isProductName(String value) {
+  static bool _isProductName(String value, String store) {
     if (value.length < 4) return false;
     final upper = value.toUpperCase();
     if (_isStructuralLine(upper)) return false;
@@ -524,6 +549,69 @@ class StoreOcrParser {
         upper.startsWith('FASTEST DELIVERY')) {
       return false;
     }
+
+    if (const {'Temu', 'SHEIN', 'AliExpress', 'Amazon'}.contains(store)) {
+      // OCR often reads words printed inside product photos (BUIL, MoTHING,
+      // etc.) as if they were product titles. For online screenshots require
+      // a more title-like phrase instead of accepting a short isolated word.
+      final words = value
+          .split(RegExp(r'\s+'))
+          .where((e) => e.trim().isNotEmpty)
+          .toList();
+      if (words.length == 1 && value.length < 12) return false;
+      if (RegExp(r'^(STAR\s+STORE|APPLIED|ALMOST\s+SOLD\s+OUT)(\s+.*)?
+  }
+
+  static double _quantityNear(List<String> lines, int index) {
+    final from = index > 0 ? index - 1 : 0;
+    final to =
+        index + 2 < lines.length ? index + 2 : lines.length - 1;
+    final qtyPattern = RegExp(
+      r'\b(?:QTY|QUANTITY|CANT(?:IDAD)?)\s*[:xX\-]?\s*(\d{1,3})\b',
+      caseSensitive: false,
+    );
+    for (var i = from; i <= to; i++) {
+      final match = qtyPattern.firstMatch(lines[i]);
+      if (match == null) continue;
+      final qty = double.tryParse(match.group(1) ?? '');
+      if (qty != null && qty > 0 && qty <= 99) return qty;
+    }
+    return 1.0;
+  }
+
+  static List<_OcrMoneyToken> _moneyTokens(String line) {
+    final out = <_OcrMoneyToken>[];
+    for (final match in _money.allMatches(line)) {
+      final raw = match.group(1);
+      if (raw == null) continue;
+      final value = _parseMoney(raw);
+      if (value == null) continue;
+      out.add(_OcrMoneyToken(value, match.start, match.end));
+    }
+    return out;
+  }
+
+  static double? _parseMoney(String raw) {
+    var value = raw.replaceAll(RegExp(r'[^0-9,.\-]'), '');
+    if (value.contains(',') && !value.contains('.')) {
+      if (RegExp(r',\d{2}$').hasMatch(value)) {
+        value = value.replaceAll(',', '.');
+      } else {
+        value = value.replaceAll(',', '');
+      }
+    } else {
+      value = value.replaceAll(',', '');
+    }
+    return double.tryParse(value);
+  }
+}
+,
+              caseSensitive: false)
+          .hasMatch(value)) {
+        return false;
+      }
+    }
+
     return RegExp(r'[A-ZÁÉÍÓÚÑa-záéíóúñ]').hasMatch(value);
   }
 
