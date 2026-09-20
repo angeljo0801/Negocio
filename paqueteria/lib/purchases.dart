@@ -1,9 +1,24 @@
 part of 'main.dart';
 
+List<String> purchasePhotoPaths(Map<String, dynamic> purchase) {
+  final out = <String>[];
+  final raw = purchase['photoPaths'];
+  if (raw is List) {
+    for (final value in raw) {
+      final path = '$value'.trim();
+      if (path.isNotEmpty && !out.contains(path)) out.add(path);
+    }
+  }
+  final legacy = '${purchase['photoPath'] ?? ''}'.trim();
+  if (legacy.isNotEmpty && !out.contains(legacy)) out.add(legacy);
+  final receipt = '${purchase['receiptPath'] ?? ''}'.trim();
+  if (out.isEmpty && receipt.isNotEmpty) out.add(receipt);
+  return out;
+}
+
 String purchasePhotoPath(Map<String, dynamic> purchase) {
-  final photo = '${purchase['photoPath'] ?? ''}'.trim();
-  if (photo.isNotEmpty) return photo;
-  return '${purchase['receiptPath'] ?? ''}'.trim();
+  final photos = purchasePhotoPaths(purchase);
+  return photos.isEmpty ? '' : photos.first;
 }
 
 class PurchasesPage extends StatefulWidget {
@@ -181,7 +196,8 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
   String? clientId;
   String type = 'Online', status = 'Pendiente de comprar';
   double commission = 0;
-  String receiptPath = '', ocrText = '', photoPath = '';
+  String receiptPath = '', ocrText = '';
+  List<String> photoPaths = [];
   bool loaded = false;
 
   @override
@@ -202,7 +218,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       total.text = '${widget.existing!['total'] ?? ''}';
       order.text = '${widget.existing!['orderNumber'] ?? ''}';
       receiptPath = '${widget.existing!['receiptPath'] ?? ''}';
-      photoPath = '${widget.existing!['photoPath'] ?? ''}';
+      photoPaths = purchasePhotoPaths(widget.existing!);
       ocrText = '${widget.existing!['ocrText'] ?? ''}';
       items = purchaseItems(widget.existing!);
     }
@@ -212,37 +228,87 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
     }
   }
 
-  Future<void> pickPurchasePhoto() async {
-    final source = await showModalBottomSheet<ImageSource>(
+  Future<String> _copyPurchasePhoto(XFile picked) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final lower = picked.path.toLowerCase();
+    final ext = lower.endsWith('.png')
+        ? 'png'
+        : lower.endsWith('.webp')
+            ? 'webp'
+            : 'jpg';
+    final target =
+        '${dir.path}/purchase_photo_${DateTime.now().microsecondsSinceEpoch}_${photoPaths.length}.$ext';
+    await File(picked.path).copy(target);
+    return target;
+  }
+
+  Future<void> pickPurchasePhotos() async {
+    final action = await showModalBottomSheet<String>(
       context: context,
       builder: (_) => SafeArea(
         child: Wrap(children: [
           ListTile(
             leading: const Icon(Icons.camera_alt),
-            title: const Text('Tomar foto'),
-            subtitle: const Text('Foto del producto, compra o ticket'),
-            onTap: () => Navigator.pop(context, ImageSource.camera),
+            title: const Text('Tomar una foto'),
+            subtitle: const Text('Puedes repetirlo cuantas veces quieras'),
+            onTap: () => Navigator.pop(context, 'camera'),
           ),
           ListTile(
-            leading: const Icon(Icons.photo_library_outlined),
-            title: const Text('Elegir de galería'),
-            subtitle: const Text('Screenshot, ticket o foto de la compra'),
-            onTap: () => Navigator.pop(context, ImageSource.gallery),
+            leading: const Icon(Icons.collections_outlined),
+            title: const Text('Elegir una o varias de la galería'),
+            subtitle: const Text('Selecciona todas las fotos que necesites'),
+            onTap: () => Navigator.pop(context, 'gallery'),
           ),
         ]),
       ),
     );
-    if (source == null) return;
-    final picked = await ImagePicker().pickImage(source: source, imageQuality: 88);
-    if (picked == null) return;
+    if (action == null) return;
 
-    final dir = await getApplicationDocumentsDirectory();
-    final lower = picked.path.toLowerCase();
-    final ext = lower.endsWith('.png') ? 'png' : lower.endsWith('.webp') ? 'webp' : 'jpg';
-    final target = '${dir.path}/purchase_photo_${DateTime.now().millisecondsSinceEpoch}.$ext';
-    await File(picked.path).copy(target);
-    if (!mounted) return;
-    setState(() => photoPath = target);
+    final picker = ImagePicker();
+    final added = <String>[];
+    if (action == 'camera') {
+      final picked =
+          await picker.pickImage(source: ImageSource.camera, imageQuality: 88);
+      if (picked != null) added.add(await _copyPurchasePhoto(picked));
+    } else {
+      final picked = await picker.pickMultiImage(imageQuality: 88);
+      for (final image in picked) {
+        added.add(await _copyPurchasePhoto(image));
+      }
+    }
+    if (!mounted || added.isEmpty) return;
+    setState(() {
+      for (final path in added) {
+        if (!photoPaths.contains(path)) photoPaths.add(path);
+      }
+    });
+  }
+
+  Future<void> openPurchasePhoto(String path) async {
+    if (!File(path).existsSync()) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: Stack(
+          children: [
+            InteractiveViewer(
+              minScale: 0.7,
+              maxScale: 5,
+              child: Image.file(File(path), fit: BoxFit.contain),
+            ),
+            Positioned(
+              right: 4,
+              top: 4,
+              child: IconButton.filledTonal(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> importReceipt() async {
@@ -258,7 +324,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
     if (r == null || !mounted) return;
     setState(() {
       receiptPath = r.path;
-      if (photoPath.isEmpty) photoPath = r.path;
+      if (!photoPaths.contains(r.path)) photoPaths.add(r.path);
       ocrText = r.text;
       if (store.text.trim().isEmpty || store.text == 'Otra tienda') store.text = r.store;
       if (r.total > 0) total.text = r.total.toStringAsFixed(2);
@@ -376,7 +442,8 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       'orderNumber': order.text.trim(),
       'date': date.text.trim().isEmpty ? today() : date.text.trim(),
       'receiptPath': receiptPath,
-      'photoPath': photoPath,
+      'photoPaths': photoPaths,
+      'photoPath': photoPaths.isEmpty ? '' : photoPaths.first,
       'ocrText': ocrText,
       'items': items,
       'allocations': allocations,
@@ -417,37 +484,95 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
         ],
       ),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        Text('Foto del pedido / compra', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 6),
-        const Text('Opcional. Puedes guardar una foto del producto, screenshot de la compra o ticket para tenerla junto al registro.'),
-        const SizedBox(height: 10),
-        if (photoPath.isNotEmpty && File(photoPath).existsSync()) ...[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.file(File(photoPath), height: 210, width: double.infinity, fit: BoxFit.cover),
-          ),
-          const SizedBox(height: 8),
-          Row(children: [
+        Row(
+          children: [
             Expanded(
-              child: OutlinedButton.icon(
-                onPressed: pickPurchasePhoto,
-                icon: const Icon(Icons.change_circle_outlined),
-                label: const Text('Cambiar foto'),
+              child: Text(
+                'Fotos del pedido / compra',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: () => setState(() => photoPath = ''),
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('Quitar'),
+            if (photoPaths.isNotEmpty)
+              Text('${photoPaths.length} foto${photoPaths.length == 1 ? '' : 's'}'),
+          ],
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Opcional. Guarda todas las fotos, screenshots o tickets que necesites dentro del mismo pedido.',
+        ),
+        const SizedBox(height: 10),
+        if (photoPaths.isNotEmpty) ...[
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: photoPaths.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
             ),
-          ]),
-        ] else
-          FilledButton.tonalIcon(
-            onPressed: pickPurchasePhoto,
-            icon: const Icon(Icons.add_a_photo_outlined),
-            label: const Text('Añadir foto (opcional)'),
+            itemBuilder: (_, index) {
+              final path = photoPaths[index];
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  InkWell(
+                    onTap: () => openPurchasePhoto(path),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: File(path).existsSync()
+                          ? Image.file(File(path), fit: BoxFit.cover)
+                          : Container(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
+                              child: const Icon(Icons.broken_image_outlined),
+                            ),
+                    ),
+                  ),
+                  Positioned(
+                    right: 2,
+                    top: 2,
+                    child: IconButton.filled(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Quitar esta foto',
+                      onPressed: () =>
+                          setState(() => photoPaths.removeAt(index)),
+                      icon: const Icon(Icons.close, size: 18),
+                    ),
+                  ),
+                  Positioned(
+                    left: 5,
+                    bottom: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '${index + 1}',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
+          const SizedBox(height: 10),
+        ],
+        FilledButton.tonalIcon(
+          onPressed: pickPurchasePhotos,
+          icon: const Icon(Icons.add_photo_alternate_outlined),
+          label: Text(
+            photoPaths.isEmpty ? 'Añadir fotos' : 'Añadir más fotos',
+          ),
+        ),
         const SizedBox(height: 12),
         FilledButton.tonalIcon(
           onPressed: importReceipt,
@@ -457,7 +582,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
         if (receiptPath.isNotEmpty) ...[
           const SizedBox(height: 6),
           const Text('El OCR puede equivocarse. Revisa artículos, precios y total antes de guardar.', style: TextStyle(fontSize: 12)),
-          if (receiptPath != photoPath && File(receiptPath).existsSync()) ...[
+          if (!photoPaths.contains(receiptPath) && File(receiptPath).existsSync()) ...[
             const SizedBox(height: 8),
             ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.file(File(receiptPath), height: 130, fit: BoxFit.cover)),
           ],
