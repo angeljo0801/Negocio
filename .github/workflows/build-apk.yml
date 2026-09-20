@@ -12,7 +12,8 @@ on:
       - ".github/finance_ai_settings.dart"
       - ".github/finance_ai_chat.dart"
       - ".github/paqueteria_sync.dart"
-      - ".github/finance_main_activity.kt"\n      - ".github/LocalAiManagerBridge.kt"
+      - ".github/finance_main_activity.kt"
+      - ".github/LocalAiManagerBridge.kt"
       - ".github/patch_finanzas.py"
       - ".github/archive-parts/**"
 
