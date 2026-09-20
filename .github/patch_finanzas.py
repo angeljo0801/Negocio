@@ -71,7 +71,7 @@ main.write_text(s)
 # Dependencies for the Memora-style AI selector/chat and phone GGUF.
 pub=root/'pubspec.yaml'
 ps=pub.read_text()
-ps=re.sub(r'^version:.*$', 'version: 2.4.3+12', ps, flags=re.M)
+ps=re.sub(r'^version:.*$', 'version: 2.4.5+13', ps, flags=re.M)
 anchor='  file_picker: ^10.3.3'
 if anchor not in ps:
     raise SystemExit('No se encontro file_picker en pubspec')
@@ -93,11 +93,16 @@ if 'android.permission.INTERNET' not in m:
 perm='com.angelapps.paqueteria.permission.FINANCE_SYNC'
 if perm not in m:
     m=m.replace(manifest_open,manifest_open+'\n    <uses-permission android:name="'+perm+'" />',1)
+manager_perm='com.angelapps.local_ai_manager.permission.USE_AI'
+if manager_perm not in m:
+    m=m.replace(manifest_open,manifest_open+'\n    <uses-permission android:name="'+manager_perm+'" />',1)
 if 'android:usesCleartextTraffic' not in m:
     m=m.replace('<application','<application android:usesCleartextTraffic="true"',1)
 if 'com.angelapps.paqueteria.finance_sync' not in m:
-    q='    <queries>\n        <provider android:authorities="com.angelapps.paqueteria.finance_sync" />\n    </queries>\n'
+    q='    <queries>\n        <provider android:authorities="com.angelapps.paqueteria.finance_sync" />\n        <package android:name="com.angelapps.local_ai_manager" />\n    </queries>\n'
     m=m.replace('    <application',q+'    <application',1)
+elif 'com.angelapps.local_ai_manager' not in m:
+    m=m.replace('</queries>','        <package android:name="com.angelapps.local_ai_manager" />\n    </queries>',1)
 manifest.write_text(m)
 
 
