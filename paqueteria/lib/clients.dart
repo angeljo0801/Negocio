@@ -99,7 +99,7 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
     setState(() {
       client = cs.where((e) => '${e['id']}' == widget.clientId).cast<Map<String,dynamic>?>().firstOrNull;
       recipients = active(r[1]).where((e) => '${e['clientId']}' == widget.clientId).toList();
-      purchases = active(r[2]).where((e) => '${e['clientId']}' == widget.clientId).toList();
+      purchases = active(r[2]).where((e) => purchaseHasClient(e, widget.clientId)).toList();
       packages = active(r[3]).where((e) => '${e['clientId']}' == widget.clientId).toList();
       payments = active(r[4]).where((e) => '${e['clientId']}' == widget.clientId).toList();
     });
@@ -183,8 +183,8 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
   @override
   Widget build(BuildContext context) {
     if (client == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    final due = purchases.fold<double>(0, (a,e)=>a+number(e['clientTotal'])) - payments.fold<double>(0,(a,e)=>a+number(e['amount']));
-    return Scaffold(appBar: AppBar(title: Text('${client!['name']}')), body: ListView(padding: const EdgeInsets.all(12), children: [
+    final due = purchases.fold<double>(0, (a,e)=>a+purchaseAmountForClient(e, widget.clientId)) - payments.fold<double>(0,(a,e)=>a+number(e['amount']));
+    return Scaffold(appBar: AppBar(title: Text('${client!['name']}'), actions: [IconButton(tooltip: 'Editar cliente', icon: const Icon(Icons.edit), onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => ClientEditPage(existing: client))); await load(); })]), body: ListView(padding: const EdgeInsets.all(12), children: [
       _sectionCard(context, 'Resumen', Icons.person, [Text('${client!['phone'] ?? ''}'), Text('Saldo pendiente: ${money(due)}', style: const TextStyle(fontWeight: FontWeight.bold)), if ('${client!['notes'] ?? ''}'.isNotEmpty) Text('${client!['notes']}')]),
       const SizedBox(height: 10),
       _sectionCard(context, 'Destinatarios en Cuba', Icons.location_on, [
@@ -201,9 +201,30 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
         Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: addRecipient, icon: const Icon(Icons.add), label: const Text('Añadir destinatario'))),
       ]),
       const SizedBox(height: 10),
-      _sectionCard(context, 'Pedidos / compras', Icons.shopping_bag, [if (purchases.isEmpty) const Text('Sin compras todavía.'), for (final p in purchases) ListTile(contentPadding: EdgeInsets.zero, title: Text('${p['store']} · ${money(number(p['clientTotal']))}'), subtitle: Text('${p['description']}\n${p['status']}'))]),
+      _sectionCard(context, 'Pedidos / compras', Icons.shopping_bag, [
+        if (purchases.isEmpty) const Text('Sin compras todavía.'),
+        for (final p in purchases) ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text('${p['store']} · ${money(purchaseAmountForClient(p, widget.clientId))}'),
+          subtitle: Text('${p['description']}\n${p['status']}'),
+          onTap: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseEditPage(existing: p))); await load(); },
+          trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(tooltip: 'Boletín', icon: const Icon(Icons.receipt_long), onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => BulletinPage(purchase: p, initialClientId: widget.clientId))); await load(); }),
+            IconButton(tooltip: 'Editar', icon: const Icon(Icons.edit_outlined), onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => PurchaseEditPage(existing: p))); await load(); }),
+          ]),
+        ),
+      ]),
       const SizedBox(height: 10),
-      _sectionCard(context, 'Paquetes', Icons.inventory_2, [if (packages.isEmpty) const Text('Sin paquetes todavía.'), for (final p in packages) ListTile(contentPadding: EdgeInsets.zero, title: Text('${p['tracking']}'), subtitle: Text('${p['carrier']} · ${p['status']} · ${number(p['billWeight']).toStringAsFixed(1)} lb'))]),
+      _sectionCard(context, 'Paquetes', Icons.inventory_2, [
+        if (packages.isEmpty) const Text('Sin paquetes todavía.'),
+        for (final p in packages) ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text('${p['tracking']}'),
+          subtitle: Text('${p['carrier']} · ${p['status']} · ${number(p['billWeight']).toStringAsFixed(1)} lb'),
+          onTap: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => PackageEditPage(existing: p))); await load(); },
+          trailing: IconButton(tooltip: 'Editar', icon: const Icon(Icons.edit_outlined), onPressed: () async { await Navigator.push(context, MaterialPageRoute(builder: (_) => PackageEditPage(existing: p))); await load(); }),
+        ),
+      ]),
       const SizedBox(height: 10),
       _sectionCard(context, 'Pagos', Icons.payments, [
         if (payments.isEmpty) const Text('Sin pagos registrados.'),
