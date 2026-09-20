@@ -298,14 +298,754 @@ AL ACONSEJAR:
         .join('\n');
   }
 
+  static bool _looksFinancial(
+    String question,
+    List<FinanceAiMessage> history,
+  ) {
+    final q = question.toLowerCase().trim();
+
+    final financeTerms = RegExp(
+      r'\\b(finanza|finanzas|contab|asiento|debe|haber|cuenta|saldo|deuda|'
+      r'cobrar|pagar|pago|pag[oó]|venta|compr|gasto|ingreso|efectivo|cash|'
+      r'inventario|capital|retiro|pr[eé]stamo|inter[eé]s|comisi[oó]n|remesa|'
+      r'utilidad|ganancia|p[eé]rdida|patrimonio|activo|pasivo|factura|'
+      r'transacci[oó]n|operaci[oó]n|precio|costo|presupuesto|balance|'
+      r'estado de resultados|flujo de caja|roi|margen|impuesto)\\b',
+      caseSensitive: false,
+    );
+    if (financeTerms.hasMatch(q)) return true;
+
+    // Very short follow-ups such as "¿y eso?", "¿cuánto?" or "entonces?"
+    // may depend on the immediately preceding financial exchange.
+    final followUp = RegExp(
+      r'^(y\\s+)?(eso|entonces|cu[aá]nto|por qu[eé]|c[oó]mo|cu[aá]l|'
+      r'y ahora|y despu[eé]s|expl[ií]came|contin[uú]a)[?¿!. ]*}
+
+class FinanceAiChatPage extends StatefulWidget {
+  final VoidCallback onChanged;
+  const FinanceAiChatPage({super.key, required this.onChanged});
+
+  @override
+  State<FinanceAiChatPage> createState() => _FinanceAiChatPageState();
+}
+
+class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
+  final input = TextEditingController();
+  List<FinanceAiSession> sessions = [];
+  String? activeId;
+  String provider = 'gemini';
+  String responseMode = 'normal';
+  bool useFinanceData = true;
+  bool busy = false;
+  bool autoSpanish = false;
+  Timer? _timer;
+  DateTime? _started;
+  double _seconds = 0;
+
+  FinanceAiSession? get active {
+    if (activeId == null) return null;
+    for (final s in sessions) {
+      if (s.id == activeId) return s;
+    }
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    unawaited(FinanceAiService.releaseProvider(provider));
+    input.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    final loaded = await FinanceAiChatStore.load();
+    if (loaded.isEmpty) loaded.add(FinanceAiSession.empty());
+    if (!mounted) return;
+    setState(() {
+      sessions = loaded;
+      activeId = loaded.first.id;
+      provider = p.getString('finance_ai_provider') ?? 'gemini';
+      responseMode = p.getString('finance_ai_response_mode') ?? 'normal';
+      useFinanceData = p.getBool('finance_ai_use_data') ?? true;
+      autoSpanish = p.getBool('finance_ai_auto_es') ?? false;
+    });
+  }
+
+  Future<void> _save() => FinanceAiChatStore.saveAll(sessions);
+
+  void _put(FinanceAiSession session) {
+    final i = sessions.indexWhere((e) => e.id == session.id);
+    if (i >= 0) {
+      sessions[i] = session;
+    } else {
+      sessions.insert(0, session);
+    }
+  }
+
+  Future<void> _newChat() async {
+    final s = FinanceAiSession.empty();
+    setState(() {
+      sessions.insert(0, s);
+      activeId = s.id;
+    });
+    await _save();
+  }
+
+  Future<void> _deleteChat(FinanceAiSession session) async {
+    setState(() {
+      sessions.removeWhere((e) => e.id == session.id);
+      if (sessions.isEmpty) sessions.add(FinanceAiSession.empty());
+      if (activeId == session.id) activeId = sessions.first.id;
+    });
+    await _save();
+  }
+
+  Future<void> _showHistory() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheet) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text(
+                  'Chats',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+              ),
+              for (final s in sessions)
+                ListTile(
+                  leading: Icon(
+                    s.id == activeId
+                        ? Icons.chat_bubble
+                        : Icons.chat_bubble_outline,
+                  ),
+                  title: Text(s.title),
+                  subtitle: Text(
+                    '${s.messages.length} mensajes',
+                  ),
+                  onTap: () {
+                    setState(() => activeId = s.id);
+                    Navigator.pop(sheetContext);
+                  },
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () async {
+                      await _deleteChat(s);
+                      if (context.mounted) setSheet(() {});
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _started = DateTime.now();
+    _seconds = 0;
+    _timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (!mounted || _started == null) return;
+      setState(() {
+        _seconds =
+            DateTime.now().difference(_started!).inMilliseconds / 1000.0;
+      });
+    });
+  }
+
+  double _stopTimer() {
+    final start = _started;
+    if (start != null) {
+      _seconds = DateTime.now().difference(start).inMilliseconds / 1000.0;
+    }
+    _timer?.cancel();
+    _timer = null;
+    _started = null;
+    return _seconds;
+  }
+
+  Future<void> _send() async {
+    final question = input.text.trim();
+    final current = active;
+    if (question.isEmpty || busy || current == null) return;
+    input.clear();
+
+    final historyBefore = List<FinanceAiMessage>.from(current.messages);
+    final user = FinanceAiMessage(
+      role: 'user',
+      text: question,
+      createdAt: DateTime.now(),
+    );
+    final placeholder = FinanceAiMessage(
+      role: 'assistant',
+      text: 'Thinking…',
+      createdAt: DateTime.now(),
+    );
+    var updated = current.copyWith(
+      title: current.messages.isEmpty
+          ? FinanceAiSession.titleFrom(question)
+          : current.title,
+      updatedAt: DateTime.now(),
+      messages: [...current.messages, user, placeholder],
+    );
+    setState(() {
+      _put(updated);
+      busy = true;
+    });
+    await _save();
+    _startTimer();
+
+    try {
+      final prompt = await FinanceAiContext.prompt(
+        question: question,
+        history: historyBefore,
+        includeLiveData: useFinanceData,
+      );
+      final localDevice = provider == 'device';
+      final safePrompt = localDevice && prompt.length > 6500
+          ? prompt.substring(0, 6500)
+          : prompt;
+      final result = await FinanceAiService.askConfigured(
+        prompt: safePrompt,
+        providerOverride: provider,
+        responseMode: localDevice ? 'fast' : responseMode,
+        onPartial: localDevice
+            ? null
+            : (partial) {
+                if (!mounted || partial.trim().isEmpty) return;
+                final cur = active;
+                if (cur == null || cur.messages.isEmpty) return;
+                final m = List<FinanceAiMessage>.from(cur.messages);
+                m[m.length - 1] = m.last.copyWith(text: partial);
+                setState(() => _put(cur.copyWith(
+                      updatedAt: DateTime.now(),
+                      messages: m,
+                    )));
+              },
+      );
+      final cur = active;
+      if (cur != null && cur.messages.isNotEmpty) {
+        final m = List<FinanceAiMessage>.from(cur.messages);
+        m[m.length - 1] = m.last.copyWith(text: result);
+        updated = cur.copyWith(updatedAt: DateTime.now(), messages: m);
+        if (mounted) setState(() => _put(updated));
+      }
+    } catch (e) {
+      final cur = active;
+      if (cur != null && cur.messages.isNotEmpty) {
+        final m = List<FinanceAiMessage>.from(cur.messages);
+        m[m.length - 1] = m.last.copyWith(
+          text: 'No pude responder: ${FinanceAiService.userFacingError(e)}',
+        );
+        updated = cur.copyWith(updatedAt: DateTime.now(), messages: m);
+        if (mounted) setState(() => _put(updated));
+      }
+    } finally {
+      final elapsed = _stopTimer();
+      final cur = active;
+      if (cur != null && cur.messages.isNotEmpty) {
+        final m = List<FinanceAiMessage>.from(cur.messages);
+        if (m.last.role == 'assistant') {
+          m[m.length - 1] = m.last.copyWith(responseSeconds: elapsed);
+          _put(cur.copyWith(updatedAt: DateTime.now(), messages: m));
+        }
+      }
+      await _save();
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _changeProvider(String? value) async {
+    if (value == null || busy) return;
+    final previous = provider;
+    final p = await SharedPreferences.getInstance();
+    await p.setString('finance_ai_provider', value);
+    if ((previous == 'device' || previous == 'manager') &&
+        previous != value) {
+      await FinanceAiService.releaseProvider(previous);
+    }
+    if (mounted) setState(() => provider = value);
+  }
+
+  Future<void> _changeMode(Set<String> values) async {
+    if (values.isEmpty || busy) return;
+    final v = values.first;
+    final p = await SharedPreferences.getInstance();
+    await p.setString('finance_ai_response_mode', v);
+    if (mounted) setState(() => responseMode = v);
+  }
+
+  Future<void> _toggleData(bool value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('finance_ai_use_data', value);
+    if (mounted) setState(() => useFinanceData = value);
+  }
+
+  Future<void> _toggleAutoSpanish(bool value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('finance_ai_auto_es', value);
+    if (mounted) setState(() => autoSpanish = value);
+  }
+
+  Future<String> _providerLabel(String value) async {
+    final p = await SharedPreferences.getInstance();
+    switch (value) {
+      case 'openai':
+        return 'Online · ${p.getString('finance_ai_openai_model') ?? 'gpt-4.1-mini'}';
+      case 'local':
+        return 'Local · ${p.getString('finance_ai_local_model') ?? 'llama3.2:3b'}';
+      case 'manager':
+        return 'Local AI Manager · shared';
+      case 'device':
+        final path = p.getString('finance_ai_device_model_path') ?? '';
+        return path.isEmpty ? 'GGUF · sin modelo' : 'GGUF · ${path.split('/').last}';
+      default:
+        return 'Gemini · ${p.getString('finance_ai_gemini_model') ?? 'gemini-2.5-flash'}';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final messages = active?.messages ?? const <FinanceAiMessage>[];
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Chat IA'),
+        actions: [
+          IconButton(
+            tooltip: 'Nuevo chat',
+            onPressed: busy ? null : _newChat,
+            icon: const Icon(Icons.add_comment_outlined),
+          ),
+          IconButton(
+            tooltip: 'Historial',
+            onPressed: _showHistory,
+            icon: const Icon(Icons.history),
+          ),
+          IconButton(
+            tooltip: 'Ajustes de IA',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const FinanceAiSettingsPage(),
+                ),
+              );
+              final p = await SharedPreferences.getInstance();
+              if (mounted) {
+                setState(() => provider =
+                    p.getString('finance_ai_provider') ?? provider);
+              }
+            },
+            icon: const Icon(Icons.tune),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          FutureBuilder<String>(
+            future: _providerLabel(provider),
+            builder: (context, snapshot) => Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: DropdownButtonFormField<String>(
+                value: provider,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Modelo / IA',
+                  helperText: snapshot.data ?? '',
+                  border: const OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'gemini', child: Text('Gemini')),
+                  DropdownMenuItem(
+                    value: 'openai',
+                    child: Text('LLM online compatible'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'local',
+                    child: Text('LLM local / Ollama'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'manager',
+                    child: Text('Local AI Manager'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'device',
+                    child: Text('GGUF en este teléfono'),
+                  ),
+                ],
+                onChanged: busy ? null : _changeProvider,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+            child: SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'fast', label: Text('Fast')),
+                ButtonSegment(value: 'normal', label: Text('Normal')),
+                ButtonSegment(value: 'deep', label: Text('Deep')),
+              ],
+              selected: {responseMode},
+              onSelectionChanged: busy ? null : _changeMode,
+            ),
+          ),
+          SwitchListTile(
+            dense: true,
+            title: const Text('Usar mis finanzas'),
+            subtitle: Text(
+              useFinanceData
+                  ? 'La IA recibe el catálogo, saldos, asientos recientes, pendientes y resumen de Paquetería.'
+                  : 'La IA responde con la base contable, sin leer tus cifras actuales.',
+            ),
+            value: useFinanceData,
+            onChanged: busy ? null : _toggleData,
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: messages.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(28),
+                      child: Text(
+                        'Pregúntame cómo registrar una operación, cómo crear un asiento o cómo van tus finanzas.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    reverse: true,
+                    padding: const EdgeInsets.all(12),
+                    itemCount: messages.length,
+                    itemBuilder: (context, index) {
+                      final m = messages[messages.length - 1 - index];
+                      final isLatest = index == 0 && m.role == 'assistant';
+                      return FinanceAiBubble(
+                        key: ValueKey(
+                          '${m.createdAt.microsecondsSinceEpoch}:${m.role}:${m.text.length}',
+                        ),
+                        message: m,
+                        provider: provider,
+                        autoSpanish: autoSpanish,
+                        onAutoSpanishChanged: _toggleAutoSpanish,
+                        liveSeconds:
+                            busy && isLatest ? _seconds : null,
+                      );
+                    },
+                  ),
+          ),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: input,
+                      minLines: 1,
+                      maxLines: 5,
+                      textInputAction: TextInputAction.newline,
+                      decoration: const InputDecoration(
+                        hintText: 'Pregunta a Finanzas IA…',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    onPressed: busy ? FinanceAiService.cancelCurrent : _send,
+                    icon: Icon(
+                      busy ? Icons.stop_rounded : Icons.send_rounded,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class FinanceAiBubble extends StatefulWidget {
+  const FinanceAiBubble({
+    super.key,
+    required this.message,
+    required this.provider,
+    required this.autoSpanish,
+    required this.onAutoSpanishChanged,
+    this.liveSeconds,
+  });
+
+  final FinanceAiMessage message;
+  final String provider;
+  final bool autoSpanish;
+  final Future<void> Function(bool value) onAutoSpanishChanged;
+  final double? liveSeconds;
+
+  @override
+  State<FinanceAiBubble> createState() => _FinanceAiBubbleState();
+}
+
+class _FinanceAiBubbleState extends State<FinanceAiBubble> {
+  String? spanish;
+  bool showSpanish = false;
+  bool translating = false;
+  Timer? autoTimer;
+
+  bool get mine => widget.message.role == 'user';
+  bool get canTranslate =>
+      !mine &&
+      widget.message.text.trim().isNotEmpty &&
+      widget.message.text.trim().toLowerCase() != 'thinking…';
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleAuto();
+  }
+
+  @override
+  void didUpdateWidget(covariant FinanceAiBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.text != widget.message.text) {
+      spanish = null;
+      showSpanish = false;
+      translating = false;
+      autoTimer?.cancel();
+      _scheduleAuto();
+    } else if (!oldWidget.autoSpanish && widget.autoSpanish) {
+      _scheduleAuto();
+    }
+  }
+
+  @override
+  void dispose() {
+    autoTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleAuto() {
+    if (!widget.autoSpanish || !canTranslate || widget.liveSeconds != null) return;
+    autoTimer?.cancel();
+    autoTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted && widget.autoSpanish && canTranslate) _translate(show: true);
+    });
+  }
+
+  Future<void> _translate({required bool show}) async {
+    if (!canTranslate || translating) return;
+    if (spanish != null) {
+      if (mounted) setState(() => showSpanish = show);
+      return;
+    }
+    setState(() {
+      translating = true;
+      showSpanish = show;
+    });
+    try {
+      final result = await FinanceAiService.askConfigured(
+        providerOverride: widget.provider,
+        responseMode: 'fast',
+        prompt:
+            'Traduce al español el siguiente texto. Conserva cifras, códigos de cuentas y formato. Devuelve solamente la traducción:\n\n${widget.message.text}',
+      );
+      if (!mounted) return;
+      setState(() {
+        spanish = result;
+        showSpanish = show;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('No pude traducir: ${FinanceAiService.userFacingError(e)}'),
+          ),
+        );
+        setState(() => showSpanish = false);
+      }
+    } finally {
+      if (mounted) setState(() => translating = false);
+    }
+  }
+
+  Future<void> _copy() async {
+    final text = (showSpanish && spanish != null ? spanish! : widget.message.text)
+        .trim();
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Copiado al portapapeles.'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayed = showSpanish && spanish != null
+        ? spanish!
+        : widget.message.text;
+    final seconds = widget.liveSeconds ?? widget.message.responseSeconds;
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * .86),
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: mine
+              ? Theme.of(context).colorScheme.primaryContainer
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(mine ? 16 : 4),
+            bottomRight: Radius.circular(mine ? 4 : 16),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              mine ? 'Tú' : 'Finanzas IA',
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 5),
+            SelectableText(
+              translating && showSpanish && spanish == null
+                  ? 'Traduciendo…'
+                  : displayed,
+            ),
+            if (!mine && canTranslate) ...[
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 2,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: translating
+                        ? null
+                        : () => showSpanish
+                            ? setState(() => showSpanish = false)
+                            : _translate(show: true),
+                    icon: const Icon(Icons.translate, size: 17),
+                    label: Text(showSpanish ? 'Original' : 'ES'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () =>
+                        widget.onAutoSpanishChanged(!widget.autoSpanish),
+                    icon: Icon(
+                      widget.autoSpanish
+                          ? Icons.check_circle_outline
+                          : Icons.autorenew_rounded,
+                      size: 17,
+                    ),
+                    label:
+                        Text(widget.autoSpanish ? 'Auto ES on' : 'Auto ES'),
+                  ),
+                  TextButton.icon(
+                    onPressed: _copy,
+                    icon: const Icon(Icons.copy_outlined, size: 17),
+                    label: const Text('Copiar'),
+                  ),
+                ],
+              ),
+            ] else if (widget.message.text.trim().isNotEmpty) ...[
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _copy,
+                  icon: const Icon(Icons.copy_outlined, size: 17),
+                  label: const Text('Copiar'),
+                ),
+              ),
+            ],
+            if (seconds != null && !mine)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  '${seconds.toStringAsFixed(1)} s',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.secondary,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+,
+      caseSensitive: false,
+    ).hasMatch(q);
+    if (!followUp) return false;
+
+    final recent = history.length > 4
+        ? history.sublist(history.length - 4)
+        : history;
+    return financeTerms.hasMatch(
+      recent.map((m) => m.text.toLowerCase()).join(' '),
+    );
+  }
+
   static Future<String> prompt({
     required String question,
     required List<FinanceAiMessage> history,
     required bool includeLiveData,
   }) async {
+    final financial = _looksFinancial(question, history);
+
+    if (!financial) {
+      return '''
+Eres Finanzas IA, un asistente de propósito general integrado dentro de la aplicación Finanzas Definitiva.
+
+REGLA PRINCIPAL:
+- No supongas que todo mensaje trata de contabilidad o dinero.
+- Primero responde a la intención real del usuario.
+- Si pregunta sobre animales, ciencia, tecnología, escritura, cultura, programación o cualquier tema general, responde normalmente sobre ese tema.
+- Solo lleva la conversación a contabilidad o finanzas cuando el mensaje realmente lo pida.
+- No pidas datos de una operación financiera si el usuario no está hablando de una operación financiera.
+
+CONVERSACIÓN RECIENTE:
+${conversation(history)}
+
+PREGUNTA ACTUAL:
+$question
+
+Responde directamente en el idioma del usuario. Sé claro y natural.
+''';
+    }
+
     final live = includeLiveData ? await buildLiveContext() : '';
     return '''
-Eres el Chat IA de Finanzas Definitiva: un asistente de contabilidad y administración financiera para un pequeño negocio.
+Eres Finanzas IA. Puedes responder preguntas generales, pero esta consulta sí tiene intención financiera o contable.
 
 $knowledge
 
@@ -317,7 +1057,7 @@ ${conversation(history)}
 PREGUNTA DEL USUARIO:
 $question
 
-Responde en el idioma del usuario. Sé práctico y claro. Cuando el usuario pregunte cómo registrar una operación, usa el catálogo de cuentas real y presenta un asiento Debe/Haber. Si faltan datos importantes, pregunta antes de afirmar un asiento definitivo. No digas que guardaste o modificaste datos: este chat aconseja; la creación real se confirma en las pantallas de Finanzas.
+Responde en el idioma del usuario. Sé práctico y claro. Usa los datos financieros solo cuando ayuden a contestar esta pregunta. Cuando el usuario pregunte cómo registrar una operación, usa el catálogo de cuentas real y presenta un asiento Debe/Haber. Si faltan datos esenciales para ese asiento, pregunta antes de asumirlos. No digas que guardaste o modificaste datos: este chat aconseja; la creación real se confirma en las pantallas de Finanzas.
 ''';
   }
 }
