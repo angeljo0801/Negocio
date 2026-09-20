@@ -21,7 +21,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
   final messages = <_BotMessage>[
     const _BotMessage(
       fromUser: false,
-      text: 'Soy tu asistente financiero con IA. Dime una operación en palabras normales, por ejemplo: “Pagué \$45 de gasolina”, “Compré \$300 de mercancía a crédito” o “Un cliente me pagó \$120”. También puedes escribirme frases como “Hice una compra de \$300 y el cliente todavía me tiene que pagar”. Usaré el modelo que elegiste en Ajustes de IA, interpretaré lo que ocurrió y te mostraré el asiento antes de guardar nada.',
+      text: 'Soy tu asistente financiero con IA. Dime una operación con tus palabras, por ejemplo: “Pagué \$45 de gasolina” o “Un cliente me pagó \$120”. Te explicaré el asiento y podrás crearlo después de revisarlo.',
     ),
   ];
   bool busy = false;
