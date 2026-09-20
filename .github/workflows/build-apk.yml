@@ -12,7 +12,7 @@ on:
       - ".github/finance_ai_settings.dart"
       - ".github/finance_ai_chat.dart"
       - ".github/paqueteria_sync.dart"
-      - ".github/finance_main_activity.kt"
+      - ".github/finance_main_activity.kt"\n      - ".github/LocalAiManagerBridge.kt"
       - ".github/patch_finanzas.py"
       - ".github/archive-parts/**"
 
@@ -49,6 +49,7 @@ jobs:
         run: |
           mkdir -p finanzas_definitiva/android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva
           cp .github/finance_main_activity.kt finanzas_definitiva/android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva/MainActivity.kt
+          cp .github/LocalAiManagerBridge.kt finanzas_definitiva/android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva/LocalAiManagerBridge.kt
           python3 .github/patch_finanzas.py
 
       - name: Descargar dependencias
@@ -72,11 +73,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Renombrar APK
-        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.4.4.apk
+        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.4.5.apk
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: Finanzas-Definitiva-APK
-          path: Finanzas-Definitiva-v2.4.4.apk
+          path: Finanzas-Definitiva-v2.4.5.apk
           retention-days: 30
