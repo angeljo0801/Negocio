@@ -71,7 +71,7 @@ main.write_text(s)
 # Dependencies for the Memora-style AI selector/chat and phone GGUF.
 pub=root/'pubspec.yaml'
 ps=pub.read_text()
-ps=re.sub(r'^version:.*$', 'version: 2.4.1+10', ps, flags=re.M)
+ps=re.sub(r'^version:.*$', 'version: 2.4.2+11', ps, flags=re.M)
 anchor='  file_picker: ^10.3.3'
 if anchor not in ps:
     raise SystemExit('No se encontro file_picker en pubspec')
