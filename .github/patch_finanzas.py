@@ -53,7 +53,7 @@ if "title:const Text('Chat IA')" not in s:
 if "title:const Text('Ajustes de IA')" not in s:
     tiles += "      ListTile(leading:const Icon(Icons.tune),title:const Text('Ajustes de IA'),subtitle:const Text('Gemini, LLM online, Ollama/local o GGUF en el teléfono'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const FinanceAiSettingsPage()))),\n"
 if "title:const Text('Asistente financiero')" not in s:
-    tiles += "      ListTile(leading:const Icon(Icons.smart_toy_outlined),title:const Text('Asistente financiero'),subtitle:const Text('Asientos rápidos y reglas contables sin IA'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:widget.onChanged)))),\n"
+    tiles += "      ListTile(leading:const Icon(Icons.smart_toy_outlined),title:const Text('Asistente financiero'),subtitle:const Text('Interpreta operaciones con la IA seleccionada'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:widget.onChanged)))),\n"
 if "Sincronizar con Paquetería" not in s:
     tiles += "      ListTile(leading:const Icon(Icons.sync_alt),title:const Text('Sincronizar con Paquetería'),subtitle:const Text('Compras, paquetes, pendientes, agentes y gastos'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>PaqueteriaSyncPage(onChanged:widget.onChanged)))),\n"
 if tiles:
@@ -62,7 +62,7 @@ if tiles:
 dash_marker="      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DailyPositionPage())),icon:const Icon(Icons.today),label:const Text('Ver posición diaria')),"
 if dash_marker in s:
     replacement="""      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAiChatPage(onChanged:(){}))),icon:const Icon(Icons.chat_bubble_outline),label:const Text('Abrir Chat IA')),
-      const SizedBox(height:8),OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:(){}))),icon:const Icon(Icons.smart_toy_outlined),label:const Text('Asistente de asientos rápido')),
+      const SizedBox(height:8),OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:(){}))),icon:const Icon(Icons.smart_toy_outlined),label:const Text('Asistente financiero con IA')),
       const SizedBox(height:8),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DailyPositionPage())),icon:const Icon(Icons.today),label:const Text('Ver posición diaria')),"""
     s=s.replace(dash_marker,replacement,1)
 
@@ -71,7 +71,7 @@ main.write_text(s)
 # Dependencies for the Memora-style AI selector/chat and phone GGUF.
 pub=root/'pubspec.yaml'
 ps=pub.read_text()
-ps=re.sub(r'^version:.*$', 'version: 2.3.0+8', ps, flags=re.M)
+ps=re.sub(r'^version:.*$', 'version: 2.4.0+9', ps, flags=re.M)
 anchor='  file_picker: ^10.3.3'
 if anchor not in ps:
     raise SystemExit('No se encontro file_picker en pubspec')
