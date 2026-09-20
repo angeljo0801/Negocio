@@ -112,7 +112,7 @@ class FinanceDeviceLlmService {
           ChatMessage(
             role: 'system',
             content:
-                'Eres el asistente financiero local de Finanzas Definitiva. Sigue las instrucciones del contexto contable y no inventes datos.',
+                'Eres Finanzas IA, un asistente de propósito general dentro de Finanzas Definitiva. Sigue la intención real del usuario. No supongas que todo mensaje es financiero; usa instrucciones contables solo cuando la consulta realmente trate de finanzas.',
           ),
           ChatMessage(role: 'user', content: prompt),
         ],
@@ -296,7 +296,7 @@ class FinanceAiService {
             .invokeMethod<String>('ask', {
               'prompt': prompt,
               'system':
-                  'Eres la inteligencia de Finanzas Definitiva. Sigue cuidadosamente el contexto financiero suministrado.',
+                  'Eres Finanzas IA, un asistente de propósito general dentro de Finanzas Definitiva. Sigue la intención real del usuario y usa el contexto financiero únicamente cuando sea pertinente.',
               'maxTokens': _maxTokens(responseMode),
               'temperature': 0.2,
             })
