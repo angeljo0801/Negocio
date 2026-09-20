@@ -110,72 +110,72 @@ class ReceiptResult {
   final double total;
   final double subtotal;
   final double tax;
+  final double shipping;
+  final double discount;
   final String store;
   final String path;
   final String orderNumber;
   final List<Map<String, dynamic>> items;
-  ReceiptResult({required this.text, required this.total, required this.subtotal, required this.tax, required this.store, required this.path, required this.orderNumber, required this.items});
-}
+  final int expectedItemCount;
+  final double confidence;
+  final List<String> warnings;
+  final bool onlineStore;
 
-String _cleanItemName(String raw) {
-  return raw
-      .replaceAll(RegExp(r'\s{2,}'), ' ')
-      .replaceAll(RegExp(r'^[*#\-\s]+'), '')
-      .trim();
+  ReceiptResult({
+    required this.text,
+    required this.total,
+    required this.subtotal,
+    required this.tax,
+    required this.shipping,
+    required this.discount,
+    required this.store,
+    required this.path,
+    required this.orderNumber,
+    required this.items,
+    required this.expectedItemCount,
+    required this.confidence,
+    required this.warnings,
+    required this.onlineStore,
+  });
 }
 
 Future<ReceiptResult?> pickReceipt(ImageSource source) async {
-  final x = await ImagePicker().pickImage(source: source, imageQuality: 90);
+  // Keep screenshots at maximum quality: recompressing small online-store text
+  // reduces ML Kit accuracy.
+  final x = await ImagePicker().pickImage(source: source, imageQuality: 100);
   if (x == null) return null;
   final dir = await getApplicationDocumentsDirectory();
-  final ext = x.path.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
-  final target = '${dir.path}/receipt_${DateTime.now().millisecondsSinceEpoch}.$ext';
+  final lower = x.path.toLowerCase();
+  final ext = lower.endsWith('.png')
+      ? 'png'
+      : lower.endsWith('.webp')
+          ? 'webp'
+          : 'jpg';
+  final target =
+      '${dir.path}/receipt_${DateTime.now().millisecondsSinceEpoch}.${ext}';
   await File(x.path).copy(target);
+
   final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
   try {
-    final result = await recognizer.processImage(InputImage.fromFilePath(target));
-    final text = result.text;
-    final upper = text.toUpperCase();
-    String store = 'Otra tienda';
-    for (final s in ['WALMART', 'AMAZON', 'SHEIN', 'TEMU', 'COSTCO', 'TARGET', 'CVS', 'WALGREENS', 'PUBLIX']) {
-      if (upper.contains(s)) { store = s[0] + s.substring(1).toLowerCase(); break; }
-    }
-
-    double total = 0, subtotal = 0, tax = 0;
-    String orderNumber = '';
-    final items = <Map<String, dynamic>>[];
-    final lines = text.split('\n').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    final amountAtEnd = RegExp(r'(?:\$\s*)?(-?\d{1,6}[.,]\d{2})\s*$');
-    final totalWords = RegExp(r'\b(GRAND\s*TOTAL|TOTAL|AMOUNT\s*DUE|BALANCE\s*DUE)\b');
-    final subtotalWords = RegExp(r'\b(SUBTOTAL|SUB\s*TOTAL)\b');
-    final taxWords = RegExp(r'\b(TAX|SALES\s*TAX)\b');
-    final ignoreWords = RegExp(r'\b(CASH|CHANGE|TENDER|PAYMENT|VISA|MASTERCARD|DEBIT|CREDIT|SAVINGS|DISCOUNT|COUPON)\b');
-
-    for (final line in lines) {
-      final u = line.toUpperCase();
-      if (orderNumber.isEmpty && (u.contains('ORDER') || u.contains('PEDIDO'))) {
-        final m = RegExp(r'(?:ORDER|PEDIDO)(?:\s*(?:NO|NUMBER|#|NRO)\.?\s*)?[:#\-]?\s*([A-Z0-9\-]{5,})', caseSensitive: false).firstMatch(line);
-        if (m != null) orderNumber = m.group(1) ?? '';
-      }
-      final m = amountAtEnd.firstMatch(line);
-      if (m == null) continue;
-      final value = number((m.group(1) ?? '').replaceAll(',', '.'));
-      if (subtotalWords.hasMatch(u)) { subtotal = value; continue; }
-      if (taxWords.hasMatch(u)) { tax = value; continue; }
-      if (totalWords.hasMatch(u)) { if (value.abs() >= total.abs()) total = value; continue; }
-      if (ignoreWords.hasMatch(u)) continue;
-      final rawName = line.substring(0, m.start).replaceAll(RegExp(r'\$\s*$'), '');
-      final name = _cleanItemName(rawName);
-      if (name.length < 2 || RegExp(r'^\d+$').hasMatch(name)) continue;
-      items.add({'id': newId(), 'name': name, 'price': value, 'qty': 1.0, 'clientId': ''});
-    }
-
-    if (total == 0) {
-      if (subtotal > 0) total = subtotal + tax;
-      if (total == 0 && items.isNotEmpty) total = items.fold<double>(0, (a, e) => a + number(e['price']) * number(e['qty']));
-    }
-    if (subtotal == 0 && items.isNotEmpty) subtotal = items.fold<double>(0, (a, e) => a + number(e['price']) * number(e['qty']));
-    return ReceiptResult(text: text, total: total, subtotal: subtotal, tax: tax, store: store, path: target, orderNumber: orderNumber, items: items);
+    final recognized =
+        await recognizer.processImage(InputImage.fromFilePath(target));
+    final parsed = StoreOcrParser.parse(recognized.text);
+    return ReceiptResult(
+      text: recognized.text,
+      total: parsed.total,
+      subtotal: parsed.subtotal,
+      tax: parsed.tax,
+      shipping: parsed.shipping,
+      discount: parsed.discount,
+      store: parsed.store,
+      path: target,
+      orderNumber: parsed.orderNumber,
+      items: parsed.items,
+      expectedItemCount: parsed.expectedItemCount,
+      confidence: parsed.confidence,
+      warnings: parsed.warnings,
+      onlineStore: parsed.isOnlineStore,
+    );
   } finally {
     recognizer.close();
   }
@@ -197,6 +197,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
   String type = 'Online', status = 'Pendiente de comprar';
   double commission = 0;
   String receiptPath = '', ocrText = '';
+  Map<String, dynamic> ocrMeta = {};
   List<String> photoPaths = [];
   bool loaded = false;
 
@@ -220,6 +221,10 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       receiptPath = '${widget.existing!['receiptPath'] ?? ''}';
       photoPaths = purchasePhotoPaths(widget.existing!);
       ocrText = '${widget.existing!['ocrText'] ?? ''}';
+      final storedOcrMeta = widget.existing!['ocrMeta'];
+      if (storedOcrMeta is Map) {
+        ocrMeta = Map<String, dynamic>.from(storedOcrMeta);
+      }
       items = purchaseItems(widget.existing!);
     }
     if (mounted) setState(() => loaded = true);
@@ -315,7 +320,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (_) => SafeArea(child: Wrap(children: [
-        ListTile(leading: const Icon(Icons.camera_alt), title: const Text('Tomar foto del ticket'), onTap: () => Navigator.pop(context, ImageSource.camera)),
+        ListTile(leading: const Icon(Icons.camera_alt), title: const Text('Tomar foto de compra / ticket'), onTap: () => Navigator.pop(context, ImageSource.camera)),
         ListTile(leading: const Icon(Icons.image), title: const Text('Elegir screenshot / imagen'), onTap: () => Navigator.pop(context, ImageSource.gallery)),
       ])),
     );
@@ -329,11 +334,37 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       if (store.text.trim().isEmpty || store.text == 'Otra tienda') store.text = r.store;
       if (r.total > 0) total.text = r.total.toStringAsFixed(2);
       if (order.text.trim().isEmpty && r.orderNumber.isNotEmpty) order.text = r.orderNumber;
-      items = r.items.map((e) => {...e, 'clientId': clientId ?? ''}).toList();
-      type = 'En tienda';
+      items = r.items
+          .map((e) => {...e, 'clientId': clientId ?? ''})
+          .toList();
+      ocrMeta = {
+        'store': r.store,
+        'subtotal': r.subtotal,
+        'tax': r.tax,
+        'shipping': r.shipping,
+        'discount': r.discount,
+        'expectedItems': r.expectedItemCount,
+        'detectedItems': r.items.length,
+        'confidence': r.confidence,
+        'warnings': r.warnings,
+      };
+      type = r.onlineStore ? 'Online' : 'En tienda';
       status = 'Comprado';
     });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ticket leído: ${items.length} artículo(s) detectado(s). Revisa nombres, precios y cliente.')));
+
+    final countText = r.expectedItemCount > 0
+        ? '${r.items.length}/${r.expectedItemCount} artículos con nombre y precio'
+        : '${r.items.length} artículo(s) con nombre y precio';
+    final confidencePct = (r.confidence * 100).round();
+    final warning = r.warnings.isEmpty ? '' : ' · ${r.warnings.first}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 6),
+        content: Text(
+          'OCR ${r.store}: $countText · confianza $confidencePct%$warning. Revisa los campos antes de guardar.',
+        ),
+      ),
+    );
   }
 
   Future<void> editItem([Map<String, dynamic>? item]) async {
@@ -445,6 +476,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       'photoPaths': photoPaths,
       'photoPath': photoPaths.isEmpty ? '' : photoPaths.first,
       'ocrText': ocrText,
+      'ocrMeta': ocrMeta,
       'items': items,
       'allocations': allocations,
       'deleted': false,

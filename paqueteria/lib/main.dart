@@ -15,6 +15,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 part 'clients.dart';
 part 'purchases.dart';
+part 'store_ocr.dart';
 part 'packages.dart';
 part 'trips.dart';
 part 'flights.dart';
