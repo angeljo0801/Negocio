@@ -156,7 +156,7 @@ class PurchaseEditPage extends StatefulWidget {
 }
 
 class _PurchaseEditPageState extends State<PurchaseEditPage> {
-  final store = TextEditingController(), desc = TextEditingController(), total = TextEditingController(), order = TextEditingController();
+  final store = TextEditingController(), desc = TextEditingController(), total = TextEditingController(), order = TextEditingController(), date = TextEditingController();
   List<Map<String, dynamic>> clients = [];
   List<Map<String, dynamic>> items = [];
   String? clientId;
@@ -172,6 +172,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
     clients = active(await Store.list('clients'));
     final s = await Store.settings();
     commission = number(widget.existing?['commissionPct'] ?? s['purchaseCommissionPct']);
+    date.text = '${widget.existing?['date'] ?? today()}';
     if (widget.existing != null) {
       clientId = '${widget.existing!['clientId'] ?? ''}';
       if (clientId!.isEmpty) clientId = null;
@@ -319,7 +320,7 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
       'clientTotal': clientTotal,
       'status': status,
       'orderNumber': order.text.trim(),
-      'date': widget.existing?['date'] ?? today(),
+      'date': date.text.trim().isEmpty ? today() : date.text.trim(),
       'receiptPath': receiptPath,
       'ocrText': ocrText,
       'items': items,
@@ -383,6 +384,8 @@ class _PurchaseEditPageState extends State<PurchaseEditPage> {
         TextField(controller: desc, maxLines: 2, decoration: const InputDecoration(labelText: 'Descripción general')),
         const SizedBox(height: 12),
         TextField(controller: order, decoration: const InputDecoration(labelText: 'Número de pedido (opcional)')),
+        const SizedBox(height: 12),
+        TextField(controller: date, decoration: const InputDecoration(labelText: 'Fecha (AAAA-MM-DD)')),
         const SizedBox(height: 12),
         TextField(controller: total, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Total del ticket / compra')),
         const SizedBox(height: 12),
