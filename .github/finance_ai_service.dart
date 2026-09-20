@@ -292,22 +292,12 @@ class FinanceAiService {
 
     if (provider == 'manager') {
       try {
-        final managerPrompt = prompt.length <= 5200
-            ? prompt
-            : '${prompt.substring(0, 1400)}\n\n'
-                '[Contexto intermedio recortado para mantener estable el modelo local]\n\n'
-                '${prompt.substring(prompt.length - 3600)}';
-        final managerMaxTokens = responseMode == 'fast'
-            ? 160
-            : responseMode == 'deep'
-                ? 384
-                : 280;
         final answer = await _managerChannel
             .invokeMethod<String>('ask', {
-              'prompt': managerPrompt,
+              'prompt': prompt,
               'system':
                   'Eres la inteligencia de Finanzas Definitiva. Sigue cuidadosamente el contexto financiero suministrado.',
-              'maxTokens': managerMaxTokens,
+              'maxTokens': _maxTokens(responseMode),
               'temperature': 0.2,
             })
             .timeout(const Duration(minutes: 6));
