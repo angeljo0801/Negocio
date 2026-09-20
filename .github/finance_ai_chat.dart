@@ -298,81 +298,14 @@ AL ACONSEJAR:
         .join('\n');
   }
 
-  static bool _looksFinancial(
-    String question,
-    List<FinanceAiMessage> history,
-  ) {
-    final q = question.toLowerCase().trim();
-    const terms = <String>[
-      'finanza', 'contab', 'asiento', ' debe ', ' haber ', 'cuenta',
-      'saldo', 'deuda', 'cobrar', 'pagar', 'pago', 'venta', 'compra',
-      'gasto', 'ingreso', 'efectivo', 'cash', 'inventario', 'capital',
-      'retiro', 'préstamo', 'prestamo', 'interés', 'interes', 'comisión',
-      'comision', 'remesa', 'utilidad', 'ganancia', 'pérdida', 'perdida',
-      'patrimonio', 'activo', 'pasivo', 'factura', 'transacción',
-      'transaccion', 'operación', 'operacion', 'precio', 'costo',
-      'presupuesto', 'balance', 'flujo de caja', 'roi', 'margen',
-      'impuesto',
-    ];
-
-    bool hasFinanceTerm(String text) {
-      final normalized = ' ${text.toLowerCase()} ';
-      return terms.any(normalized.contains);
-    }
-
-    if (hasFinanceTerm(q)) return true;
-
-    const followUps = <String>[
-      'eso', 'y eso', 'entonces', 'y entonces', 'cuánto', 'cuanto',
-      'y cuánto', 'y cuanto', 'por qué', 'por que', 'cómo', 'como',
-      'cuál', 'cual', 'y ahora', 'y después', 'y despues', 'explícame',
-      'explicame', 'continúa', 'continua',
-    ];
-    final cleaned = q
-        .replaceAll('¿', '')
-        .replaceAll('?', '')
-        .replaceAll('!', '')
-        .replaceAll('.', '')
-        .trim();
-    if (!followUps.contains(cleaned)) return false;
-
-    final recent = history.length > 4
-        ? history.sublist(history.length - 4)
-        : history;
-    return hasFinanceTerm(recent.map((m) => m.text).join(' '));
-  }
-
   static Future<String> prompt({
     required String question,
     required List<FinanceAiMessage> history,
     required bool includeLiveData,
   }) async {
-    final financial = _looksFinancial(question, history);
-
-    if (!financial) {
-      return '''
-Eres Finanzas IA, un asistente de propósito general integrado dentro de la aplicación Finanzas Definitiva.
-
-REGLA PRINCIPAL:
-- No supongas que todo mensaje trata de contabilidad o dinero.
-- Primero responde a la intención real del usuario.
-- Si pregunta sobre animales, ciencia, tecnología, escritura, cultura, programación o cualquier tema general, responde normalmente sobre ese tema.
-- Solo lleva la conversación a contabilidad o finanzas cuando el mensaje realmente lo pida.
-- No pidas datos de una operación financiera si el usuario no está hablando de una operación financiera.
-
-CONVERSACIÓN RECIENTE:
-${conversation(history)}
-
-PREGUNTA ACTUAL:
-$question
-
-Responde directamente en el idioma del usuario. Sé claro y natural.
-''';
-    }
-
     final live = includeLiveData ? await buildLiveContext() : '';
     return '''
-Eres Finanzas IA. Puedes responder preguntas generales, pero esta consulta sí tiene intención financiera o contable.
+Eres el Chat IA de Finanzas Definitiva: un asistente de contabilidad y administración financiera para un pequeño negocio.
 
 $knowledge
 
@@ -384,7 +317,7 @@ ${conversation(history)}
 PREGUNTA DEL USUARIO:
 $question
 
-Responde en el idioma del usuario. Sé práctico y claro. Usa los datos financieros solo cuando ayuden a contestar esta pregunta. Cuando el usuario pregunte cómo registrar una operación, usa el catálogo de cuentas real y presenta un asiento Debe/Haber. Si faltan datos esenciales para ese asiento, pregunta antes de asumirlos. No digas que guardaste o modificaste datos: este chat aconseja; la creación real se confirma en las pantallas de Finanzas.
+Responde en el idioma del usuario. Sé práctico y claro. Cuando el usuario pregunte cómo registrar una operación, usa el catálogo de cuentas real y presenta un asiento Debe/Haber. Si faltan datos importantes, pregunta antes de afirmar un asiento definitivo. No digas que guardaste o modificaste datos: este chat aconseja; la creación real se confirma en las pantallas de Finanzas.
 ''';
   }
 }
