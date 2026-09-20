@@ -213,12 +213,11 @@ class StoreOcrParser {
       );
     }
     if (total == 0 && subtotal > 0) {
-      final online = const {'Amazon', 'AliExpress', 'Temu', 'SHEIN'}.contains(store);
+      final online =
+          const {'Amazon', 'AliExpress', 'Temu', 'SHEIN'}.contains(store);
       final completeItemSet =
-          expectedItems == 0 || (items.isNotEmpty && items.length >= expectedItems);
-      // For long online checkout screenshots, a partial OCR list must never
-      // become the order total. It is safer to leave total unconfirmed than
-      // to sum only the products that happened to be recognized.
+          expectedItems == 0 ||
+          (items.isNotEmpty && items.length >= expectedItems);
       if (!online || completeItemSet) {
         final calculated = subtotal + tax + shipping - discount;
         if (calculated > 0) total = calculated;
@@ -392,14 +391,19 @@ class StoreOcrParser {
     // "$61.38  $88.46".
     for (var i = actionIndex; i >= startIndex; i--) {
       final upper = lines[i].toUpperCase();
-      if (_isPromoLine(upper)) continue;
+      if (_isPromoLine(upper) ||
+          upper.contains('SHIPPING') ||
+          upper.contains('DELIVERY')) {
+        continue;
+      }
       final values = _moneyTokens(lines[i]);
       if (values.length >= 2) {
-        final positive = values.map((e) => e.value.abs()).where((e) => e > 0).toList();
+        final positive = values
+            .map((e) => e.value.abs())
+            .where((e) => e > 0)
+            .toList();
         if (positive.isEmpty) continue;
         if (preferLowerWhenMultiple) {
-          // Temu commonly shows the old crossed-out checkout amount beside
-          // the current discounted amount. The payable amount is the lower one.
           positive.sort();
           return positive.first;
         }
@@ -413,11 +417,7 @@ class StoreOcrParser {
     // selected as the order total.
     for (var i = actionIndex; i >= startIndex; i--) {
       final upper = lines[i].toUpperCase();
-      if (_isPromoLine(upper) ||
-          upper.contains('SHIPPING') ||
-          upper.contains('DELIVERY')) {
-        continue;
-      }
+      if (_isPromoLine(upper)) continue;
       final values = _moneyTokens(lines[i]);
       if (values.isEmpty) continue;
       return (preferFirstOnLine ? values.first.value : values.last.value)
@@ -457,8 +457,7 @@ class StoreOcrParser {
       upper.contains('APPLIED') ||
       upper.contains('COUPON') ||
       upper.contains('% OFF') ||
-      upper.contains('POINTS') ||
-      upper.contains('APPLIED');
+      upper.contains('POINTS');
 
   static List<Map<String, dynamic>> _extractItems(
     List<String> lines,
@@ -551,16 +550,17 @@ class StoreOcrParser {
     }
 
     if (const {'Temu', 'SHEIN', 'AliExpress', 'Amazon'}.contains(store)) {
-      // OCR often reads words printed inside product photos (BUIL, MoTHING,
-      // etc.) as if they were product titles. For online screenshots require
-      // a more title-like phrase instead of accepting a short isolated word.
       final words = value
           .split(RegExp(r'\s+'))
           .where((e) => e.trim().isNotEmpty)
           .toList();
+
+      // Short isolated words are commonly text printed inside product photos
+      // rather than the actual product title.
       if (words.length == 1 && value.length < 12) return false;
-      if (RegExp(r'^(STAR\s+STORE|APPLIED|ALMOST\s+SOLD\s+OUT)(\s+.*)?
-  }
+
+      if (RegExp(
+        r'^(STAR\s+STORE|APPLIED|ALMOST\s+SOLD\s+OUT)(\s+.*)?
 
   static double _quantityNear(List<String> lines, int index) {
     final from = index > 0 ? index - 1 : 0;
@@ -606,8 +606,8 @@ class StoreOcrParser {
   }
 }
 ,
-              caseSensitive: false)
-          .hasMatch(value)) {
+        caseSensitive: false,
+      ).hasMatch(value)) {
         return false;
       }
     }
