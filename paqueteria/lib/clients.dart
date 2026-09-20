@@ -104,25 +104,82 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
       payments = active(r[4]).where((e) => '${e['clientId']}' == widget.clientId).toList();
     });
   }
-  Future<void> addRecipient() async {
-    final n = TextEditingController(), p = TextEditingController(), province = TextEditingController(), address = TextEditingController();
-    final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(title: const Text('Nuevo destinatario en Cuba'), content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      TextField(controller: n, decoration: const InputDecoration(labelText: 'Nombre')), const SizedBox(height: 8),
-      TextField(controller: p, decoration: const InputDecoration(labelText: 'Teléfono')), const SizedBox(height: 8),
-      TextField(controller: province, decoration: const InputDecoration(labelText: 'Provincia / municipio')), const SizedBox(height: 8),
-      TextField(controller: address, decoration: const InputDecoration(labelText: 'Dirección')),
-    ])), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Guardar'))]));
+  Future<void> editRecipient([Map<String, dynamic>? existing]) async {
+    final n = TextEditingController(text: '${existing?['name'] ?? ''}');
+    final p = TextEditingController(text: '${existing?['phone'] ?? ''}');
+    final province = TextEditingController(text: '${existing?['province'] ?? ''}');
+    final address = TextEditingController(text: '${existing?['address'] ?? ''}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(existing == null ? 'Nuevo destinatario en Cuba' : 'Editar destinatario'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: n, decoration: const InputDecoration(labelText: 'Nombre')), const SizedBox(height: 8),
+          TextField(controller: p, decoration: const InputDecoration(labelText: 'Teléfono')), const SizedBox(height: 8),
+          TextField(controller: province, decoration: const InputDecoration(labelText: 'Provincia / municipio')), const SizedBox(height: 8),
+          TextField(controller: address, decoration: const InputDecoration(labelText: 'Dirección')),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Guardar')),
+        ],
+      ),
+    );
     if (ok == true && n.text.trim().isNotEmpty) {
       final rows = await Store.list('recipients');
-      rows.add({'id': newId(), 'clientId': widget.clientId, 'name': n.text.trim(), 'phone': p.text.trim(), 'province': province.text.trim(), 'address': address.text.trim(), 'deleted': false});
-      await Store.saveList('recipients', rows); load();
+      final item = {
+        'id': existing?['id'] ?? newId(),
+        'clientId': widget.clientId,
+        'name': n.text.trim(),
+        'phone': p.text.trim(),
+        'province': province.text.trim(),
+        'address': address.text.trim(),
+        'deleted': false,
+      };
+      final i = rows.indexWhere((e) => '${e['id']}' == '${item['id']}');
+      if (i >= 0) rows[i] = {...rows[i], ...item}; else rows.add(item);
+      await Store.saveList('recipients', rows);
+      load();
     }
   }
-  Future<void> addPayment() async {
-    final a = TextEditingController();
-    final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(title: const Text('Registrar pago'), content: TextField(controller: a, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Monto')), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Guardar'))]));
-    if (ok == true && number(a.text) > 0) { final rows = await Store.list('payments'); rows.add({'id': newId(), 'clientId': widget.clientId, 'amount': number(a.text), 'date': today(), 'deleted': false}); await Store.saveList('payments', rows); load(); }
+
+  Future<void> addRecipient() => editRecipient();
+
+  Future<void> editPayment([Map<String, dynamic>? existing]) async {
+    final a = TextEditingController(text: existing == null ? '' : '${existing['amount']}');
+    final date = TextEditingController(text: '${existing?['date'] ?? today()}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(existing == null ? 'Registrar pago' : 'Editar pago'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: a, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Monto')),
+          const SizedBox(height: 8),
+          TextField(controller: date, decoration: const InputDecoration(labelText: 'Fecha (AAAA-MM-DD)')),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Guardar')),
+        ],
+      ),
+    );
+    if (ok == true && number(a.text) > 0) {
+      final rows = await Store.list('payments');
+      final item = {
+        'id': existing?['id'] ?? newId(),
+        'clientId': widget.clientId,
+        'amount': number(a.text),
+        'date': date.text.trim().isEmpty ? today() : date.text.trim(),
+        'deleted': false,
+      };
+      final i = rows.indexWhere((e) => '${e['id']}' == '${item['id']}');
+      if (i >= 0) rows[i] = {...rows[i], ...item}; else rows.add(item);
+      await Store.saveList('payments', rows);
+      load();
+    }
   }
+
+  Future<void> addPayment() => editPayment();
   @override
   Widget build(BuildContext context) {
     if (client == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -131,7 +188,16 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
       _sectionCard(context, 'Resumen', Icons.person, [Text('${client!['phone'] ?? ''}'), Text('Saldo pendiente: ${money(due)}', style: const TextStyle(fontWeight: FontWeight.bold)), if ('${client!['notes'] ?? ''}'.isNotEmpty) Text('${client!['notes']}')]),
       const SizedBox(height: 10),
       _sectionCard(context, 'Destinatarios en Cuba', Icons.location_on, [
-        for (final r in recipients) ListTile(contentPadding: EdgeInsets.zero, title: Text('${r['name']}'), subtitle: Text('${r['province']} · ${r['phone']}\n${r['address']}'), trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: () async { if (await confirmDelete(context, 'este destinatario')) { await softDelete('recipients', '${r['id']}'); load(); } })),
+        for (final r in recipients) ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text('${r['name']}'),
+          subtitle: Text('${r['province']} · ${r['phone']}\n${r['address']}'),
+          onTap: () => editRecipient(r),
+          trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(tooltip: 'Editar', icon: const Icon(Icons.edit_outlined), onPressed: () => editRecipient(r)),
+            IconButton(icon: const Icon(Icons.delete_outline), onPressed: () async { if (await confirmDelete(context, 'este destinatario')) { await softDelete('recipients', '${r['id']}'); load(); } }),
+          ]),
+        ),
         Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: addRecipient, icon: const Icon(Icons.add), label: const Text('Añadir destinatario'))),
       ]),
       const SizedBox(height: 10),
@@ -139,7 +205,20 @@ class _ClientDetailPageState extends State<ClientDetailPage> {
       const SizedBox(height: 10),
       _sectionCard(context, 'Paquetes', Icons.inventory_2, [if (packages.isEmpty) const Text('Sin paquetes todavía.'), for (final p in packages) ListTile(contentPadding: EdgeInsets.zero, title: Text('${p['tracking']}'), subtitle: Text('${p['carrier']} · ${p['status']} · ${number(p['billWeight']).toStringAsFixed(1)} lb'))]),
       const SizedBox(height: 10),
-      FilledButton.tonalIcon(onPressed: addPayment, icon: const Icon(Icons.payments), label: const Text('Registrar pago')),
+      _sectionCard(context, 'Pagos', Icons.payments, [
+        if (payments.isEmpty) const Text('Sin pagos registrados.'),
+        for (final p in payments) ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(money(number(p['amount']))),
+          subtitle: Text('${p['date'] ?? ''}'),
+          onTap: () => editPayment(p),
+          trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(tooltip: 'Editar', icon: const Icon(Icons.edit_outlined), onPressed: () => editPayment(p)),
+            IconButton(icon: const Icon(Icons.delete_outline), onPressed: () async { if (await confirmDelete(context, 'este pago')) { await softDelete('payments', '${p['id']}'); load(); } }),
+          ]),
+        ),
+        Align(alignment: Alignment.centerLeft, child: TextButton.icon(onPressed: addPayment, icon: const Icon(Icons.add), label: const Text('Registrar pago'))),
+      ]),
       const SizedBox(height: 80),
     ]));
   }
