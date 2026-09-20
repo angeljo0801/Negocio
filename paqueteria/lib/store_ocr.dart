@@ -133,9 +133,14 @@ class StoreOcrParser {
         [RegExp(r'\b(ORDER\s+TOTAL|GRAND\s+TOTAL)\b', caseSensitive: false)],
       );
       if (total == 0) {
-        total = _amountNearAction(
+        // On SHEIN checkout screenshots the product grid sits above
+        // "Payment Method". Searching too far upward can mistake a product
+        // price (for example $5.60) for the order total. Restrict total
+        // detection to the checkout footer.
+        total = _checkoutFooterAmount(
           lines,
-          ['PLACE ORDER'],
+          action: 'PLACE ORDER',
+          startMarker: 'PAYMENT METHOD',
           preferFirstOnLine: true,
         );
       }
@@ -344,6 +349,56 @@ class StoreOcrParser {
           if (next.isNotEmpty) return next.first.value.abs();
         }
       }
+    }
+    return 0;
+  }
+
+  static double _checkoutFooterAmount(
+    List<String> lines, {
+    required String action,
+    required String startMarker,
+    required bool preferFirstOnLine,
+  }) {
+    var actionIndex = -1;
+    for (var i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].toUpperCase().contains(action)) {
+        actionIndex = i;
+        break;
+      }
+    }
+    if (actionIndex < 0) return 0;
+
+    var startIndex = 0;
+    for (var i = actionIndex; i >= 0; i--) {
+      if (lines[i].toUpperCase().contains(startMarker)) {
+        startIndex = i;
+        break;
+      }
+    }
+
+    // First prefer a line with two amounts in the footer. SHEIN commonly
+    // renders current total first and the old/struck-through amount second:
+    // "$61.38  $88.46".
+    for (var i = actionIndex; i >= startIndex; i--) {
+      final upper = lines[i].toUpperCase();
+      if (_isPromoLine(upper)) continue;
+      final values = _moneyTokens(lines[i]);
+      if (values.length >= 2) {
+        return (preferFirstOnLine ? values.first.value : values.last.value)
+            .abs();
+      }
+    }
+
+    // Then accept the closest non-promotional amount, but never leave the
+    // payment/footer region. This prevents product-card prices from being
+    // selected as the order total.
+    for (var i = actionIndex; i >= startIndex; i--) {
+      final upper = lines[i].toUpperCase();
+      if (_isPromoLine(upper)) continue;
+      final values = _moneyTokens(lines[i]);
+      if (values.isEmpty) continue;
+      return (preferFirstOnLine ? values.first.value : values.last.value)
+          .abs();
     }
     return 0;
   }
