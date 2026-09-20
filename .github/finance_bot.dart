@@ -35,7 +35,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
 
   @override
   void dispose() {
-    unawaited(FinanceAiService.releaseDeviceModel());
+    unawaited(FinanceAiService.releaseConfiguredLocalModel());
     input.dispose();
     scroll.dispose();
     super.dispose();
@@ -316,7 +316,7 @@ $original
 
     if (_has(s, ['deuda', 'por pagar', 'me deben']) && amount == null) {
       return const _BotReply(
-        'Para controlar una deuda por vencimiento usa Plan → Deudas. Ahí eliges “Yo debo pagar” o “Me deben cobrar”. Si además quieres crear el asiento contable, dime qué originó la deuda y el importe; por ejemplo: “Compré \$400 de mercancía a crédito”.',
+        'Para controlar una deuda por vencimiento usa Plan → Deudas. Ahí eliges “Yo debo pagar” o “Me deben pagar”. Si además quieres crear el asiento contable, dime qué originó la deuda y el importe; por ejemplo: “Compré \$400 de mercancía a crédito”.',
       );
     }
 
