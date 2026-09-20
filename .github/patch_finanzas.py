@@ -99,3 +99,11 @@ if 'com.angelapps.paqueteria.finance_sync' not in m:
     q='    <queries>\n        <provider android:authorities="com.angelapps.paqueteria.finance_sync" />\n    </queries>\n'
     m=m.replace('    <application',q+'    <application',1)
 manifest.write_text(m)
+
+
+# GGUF runtime requires Android API 26+.
+gradle=root/'android/app/build.gradle.kts'
+g=gradle.read_text()
+g=g.replace('minSdk = flutter.minSdkVersion','minSdk = 26')
+g=g.replace('minSdk = 24','minSdk = 26')
+gradle.write_text(g)
