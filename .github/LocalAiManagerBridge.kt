@@ -138,7 +138,8 @@ object LocalAiManagerBridge {
             val intent = Intent().apply {
                 component = ComponentName(MANAGER_PACKAGE, MANAGER_SERVICE)
             }
-            val ok = context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
+            val flags = Context.BIND_AUTO_CREATE or Context.BIND_IMPORTANT or Context.BIND_ABOVE_CLIENT
+            val ok = context.bindService(intent, connection, flags)
             if (!ok) {
                 binding = false
                 failAll("No encontré Local AI Manager. Instala o actualiza el Manager.")
