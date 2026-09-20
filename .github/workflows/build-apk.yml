@@ -20,6 +20,9 @@ jobs:
           echo "05d465ef3bfb2802934e2b68991e96bdb1e491ad3b825fe9c779805b5b6e1970  Finanzas_Definitiva_Flutter_v3.zip" | sha256sum --check
           unzip -o Finanzas_Definitiva_Flutter_v3.zip
           cp .github/finance_bot.dart finanzas_definitiva/lib/finance_bot.dart
+          cp .github/finance_ai_service.dart finanzas_definitiva/lib/finance_ai_service.dart
+          cp .github/finance_ai_settings.dart finanzas_definitiva/lib/finance_ai_settings.dart
+          cp .github/finance_ai_chat.dart finanzas_definitiva/lib/finance_ai_chat.dart
 
       - name: Integrar sincronizacion con Paqueteria
         run: |
@@ -40,6 +43,8 @@ jobs:
               s=s.replace(marker, marker+"\nimport 'paqueteria_sync.dart';")
           if "import 'finance_bot.dart';" not in s:
               s=s.replace("import 'paqueteria_sync.dart';", "import 'paqueteria_sync.dart';\nimport 'finance_bot.dart';")
+          if "import 'finance_ai_settings.dart';" not in s:
+              s=s.replace("import 'finance_bot.dart';", "import 'finance_bot.dart';\nimport 'finance_ai_settings.dart';\nimport 'finance_ai_chat.dart';")
           old="class _HomePageState extends State<HomePage> {\n  int index = 0, revision = 0;"
           if old in s:
               new="class _HomePageState extends State<HomePage> {\n  @override\n  void initState() {\n    super.initState();\n    Future.microtask(() async {\n      final result = await PaqueteriaSyncService.sync(silent: true);\n      if (result != null && mounted) refresh();\n    });\n  }\n  int index = 0, revision = 0;"
@@ -49,19 +54,93 @@ jobs:
               if marker not in s: raise SystemExit('No se encontro Catálogo de cuentas')
               tile="      ListTile(leading:const Icon(Icons.sync_alt),title:const Text('Sincronizar con Paquetería'),subtitle:const Text('Compras, paquetes, pendientes, agentes y gastos'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>PaqueteriaSyncPage(onChanged:widget.onChanged)))),\n"
               s=s.replace(marker,tile+marker)
+          settings_marker="      ListTile(leading:const Icon(Icons.receipt_long_outlined),title:const Text('Libro diario profesional')"
+          if settings_marker not in s: raise SystemExit('No se encontro Libro diario profesional')
           if 'Asistente financiero' not in s:
-              settings_marker="      ListTile(leading:const Icon(Icons.receipt_long_outlined),title:const Text('Libro diario profesional')"
-              if settings_marker not in s: raise SystemExit('No se encontro Libro diario profesional')
               bot_tile="      ListTile(leading:const Icon(Icons.smart_toy_outlined),title:const Text('Asistente financiero'),subtitle:const Text('Te explica y prepara asientos, gastos, cobros y compras'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:widget.onChanged)))),\n"
               s=s.replace(settings_marker,bot_tile+settings_marker)
-              dash_marker="      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DailyPositionPage())),icon:const Icon(Icons.today),label:const Text('Ver posición diaria')),"
-              if dash_marker in s:
-                  bot_button="      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:(){}))),icon:const Icon(Icons.smart_toy_outlined),label:const Text('Abrir asistente financiero')),\n      const SizedBox(height:8),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DailyPositionPage())),icon:const Icon(Icons.today),label:const Text('Ver posición diaria')),"
-                  s=s.replace(dash_marker,bot_button)
+          if "title:const Text('Chat IA')" not in s:
+              ai_tiles="      ListTile(leading:const Icon(Icons.chat_bubble_outline),title:const Text('Chat IA'),subtitle:const Text('Habla con Gemini, OpenAI, Ollama o un GGUF usando tus finanzas como contexto'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAiChatPage(onChanged:widget.onChanged)))),\n      ListTile(leading:const Icon(Icons.tune),title:const Text('Ajustes de IA'),subtitle:const Text('Selecciona proveedor, modelo y claves como en Memora'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const FinanceAiSettingsPage()))),\n"
+              s=s.replace(settings_marker,ai_tiles+settings_marker)
+          dash_marker="      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DailyPositionPage())),icon:const Icon(Icons.today),label:const Text('Ver posición diaria')),"
+          if dash_marker in s:
+              ai_button="      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAiChatPage(onChanged:(){}))),icon:const Icon(Icons.chat_bubble_outline),label:const Text('Abrir Chat IA')),\n      const SizedBox(height:8),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:(){}))),icon:const Icon(Icons.smart_toy_outlined),label:const Text('Asistente de asientos rápido')),\n      const SizedBox(height:8),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DailyPositionPage())),icon:const Icon(Icons.today),label:const Text('Ver posición diaria')),"
+              s=s.replace(dash_marker,ai_button)
           main.write_text(s)
           pub=Path('finanzas_definitiva/pubspec.yaml')
           ps=pub.read_text()
-          ps=re.sub(r'^version:.*$', 'version: 2.2.0+7', ps, flags=re.M)
+          ps=re.sub(r'^version:.*
+          PY
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Crear archivos Android
+        working-directory: finanzas_definitiva
+        run: flutter create . --platforms=android --org com.angel.finanzas
+
+      - name: Conectar Android con Paqueteria
+        working-directory: finanzas_definitiva
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva
+          echo 'cGFja2FnZSBjb20uYW5nZWwuZmluYW56YXMuZmluYW56YXNfZGVmaW5pdGl2YQoKaW1wb3J0IGFuZHJvaWQubmV0LlVyaQppbXBvcnQgaW8uZmx1dHRlci5lbWJlZGRpbmcuYW5kcm9pZC5GbHV0dGVyQWN0aXZpdHkKaW1wb3J0IGlvLmZsdXR0ZXIuZW1iZWRkaW5nLmVuZ2luZS5GbHV0dGVyRW5naW5lCmltcG9ydCBpby5mbHV0dGVyLnBsdWdpbi5jb21tb24uTWV0aG9kQ2hhbm5lbAoKY2xhc3MgTWFpbkFjdGl2aXR5IDogRmx1dHRlckFjdGl2aXR5KCkgewogICAgb3ZlcnJpZGUgZnVuIGNvbmZpZ3VyZUZsdXR0ZXJFbmdpbmUoZmx1dHRlckVuZ2luZTogRmx1dHRlckVuZ2luZSkgewogICAgICAgIHN1cGVyLmNvbmZpZ3VyZUZsdXR0ZXJFbmdpbmUoZmx1dHRlckVuZ2luZSkKICAgICAgICBNZXRob2RDaGFubmVsKGZsdXR0ZXJFbmdpbmUuZGFydEV4ZWN1dG9yLmJpbmFyeU1lc3NlbmdlciwgImNvbS5hbmdlbC5maW5hbnphcy9wYXF1ZXRlcmlhX3N5bmMiKQogICAgICAgICAgICAuc2V0TWV0aG9kQ2FsbEhhbmRsZXIgeyBjYWxsLCByZXN1bHQgLT4KICAgICAgICAgICAgICAgIGlmIChjYWxsLm1ldGhvZCAhPSAicmVhZFNuYXBzaG90IikgewogICAgICAgICAgICAgICAgICAgIHJlc3VsdC5ub3RJbXBsZW1lbnRlZCgpCiAgICAgICAgICAgICAgICAgICAgcmV0dXJuQHNldE1ldGhvZENhbGxIYW5kbGVyCiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICB0cnkgewogICAgICAgICAgICAgICAgICAgIHZhbCB1cmkgPSBVcmkucGFyc2UoImNvbnRlbnQ6Ly9jb20uYW5nZWxhcHBzLnBhcXVldGVyaWEuZmluYW5jZV9zeW5jL3NuYXBzaG90IikKICAgICAgICAgICAgICAgICAgICB2YWwgc3RyZWFtID0gY29udGVudFJlc29sdmVyLm9wZW5JbnB1dFN0cmVhbSh1cmkpCiAgICAgICAgICAgICAgICAgICAgaWYgKHN0cmVhbSA9PSBudWxsKSB7CiAgICAgICAgICAgICAgICAgICAgICAgIHJlc3VsdC5lcnJvcigiUEFRVUVURVJJQV9OT1RfQVZBSUxBQkxFIiwgIk5vIGVuY29udHLDqSBsYSBhcGxpY2FjacOzbiBQYXF1ZXRlcsOtYSBvIHRvZGF2w61hIG5vIHRpZW5lIGRhdG9zIHBhcmEgc2luY3Jvbml6YXIuIiwgbnVsbCkKICAgICAgICAgICAgICAgICAgICB9IGVsc2UgewogICAgICAgICAgICAgICAgICAgICAgICB2YWwgdGV4dCA9IHN0cmVhbS5idWZmZXJlZFJlYWRlcihDaGFyc2V0cy5VVEZfOCkudXNlIHsgaXQucmVhZFRleHQoKSB9CiAgICAgICAgICAgICAgICAgICAgICAgIHJlc3VsdC5zdWNjZXNzKHRleHQpCiAgICAgICAgICAgICAgICAgICAgfQogICAgICAgICAgICAgICAgfSBjYXRjaCAoZTogU2VjdXJpdHlFeGNlcHRpb24pIHsKICAgICAgICAgICAgICAgICAgICByZXN1bHQuZXJyb3IoIlBBUVVFVEVSSUFfUEVSTUlTU0lPTiIsICJGaW5hbnphcyBubyB0aWVuZSBwZXJtaXNvIHBhcmEgbGVlciBsb3MgZGF0b3MgbG9jYWxlcyBkZSBQYXF1ZXRlcsOtYS4gQWN0dWFsaXphIGFtYmFzIGFwbGljYWNpb25lcy4iLCBudWxsKQogICAgICAgICAgICAgICAgfSBjYXRjaCAoZTogRXhjZXB0aW9uKSB7CiAgICAgICAgICAgICAgICAgICAgcmVzdWx0LmVycm9yKCJQQVFVRVRFUklBX05PVF9BVkFJTEFCTEUiLCAiTm8gcHVkZSBsZWVyIFBhcXVldGVyw61hOiAiICsgKGUubWVzc2FnZSA/OiAiZXJyb3IgZGVzY29ub2NpZG8iKSwgbnVsbCkKICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgfQogICAgfQp9Cg==' | base64 -d > android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva/MainActivity.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest=Path('android/app/src/main/AndroidManifest.xml')
+          m=manifest.read_text()
+          perm='com.angelapps.paqueteria.permission.FINANCE_SYNC'
+          if perm not in m:
+              m=m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">','<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="'+perm+'" />')
+          if 'android.permission.INTERNET' not in m:
+              m=m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">','<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    <uses-permission android:name="android.permission.INTERNET" />')
+          if 'android:usesCleartextTraffic' not in m:
+              m=m.replace('<application','<application android:usesCleartextTraffic="true"',1)
+          if 'com.angelapps.paqueteria.finance_sync' not in m:
+              q='    <queries>\n        <provider android:authorities="com.angelapps.paqueteria.finance_sync" />\n    </queries>\n'
+              m=m.replace('    <application',q+'    <application',1)
+          manifest.write_text(m)
+          PY
+
+      - name: Descargar dependencias
+        working-directory: finanzas_definitiva
+        run: flutter pub get
+
+      - name: Analizar código
+        working-directory: finanzas_definitiva
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+
+      - name: Generar icono de la aplicacion
+        working-directory: finanzas_definitiva
+        run: dart run flutter_launcher_icons
+
+      - name: Ejecutar pruebas
+        working-directory: finanzas_definitiva
+        run: flutter test
+
+      - name: Compilar APK
+        working-directory: finanzas_definitiva
+        run: flutter build apk --release
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Finanzas-Definitiva-APK
+          path: finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
+, 'version: 2.3.0+8', ps, flags=re.M)
+          deps={
+              'http: ^1.5.0':'  http: ^1.5.0',
+              'shared_preferences: ^2.5.3':'  shared_preferences: ^2.5.3',
+              'llama_flutter_android: ^0.2.6':'  llama_flutter_android: ^0.2.6',
+          }
+          anchor='  file_picker: ^10.3.3'
+          if anchor not in ps: raise SystemExit('No se encontro file_picker en pubspec')
+          for key,line in deps.items():
+              if key not in ps:
+                  ps=ps.replace(anchor,anchor+'\n'+line)
           pub.write_text(ps)
           PY
 
