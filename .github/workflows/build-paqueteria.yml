@@ -242,11 +242,11 @@ jobs:
         run: test "$(cat build.exit)" = "0"
 
       - name: Rename APK
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.8.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v1.9.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Paqueteria-APK
-          path: Paqueteria-v1.8.apk
+          path: Paqueteria-v1.9.apk
           retention-days: 30
