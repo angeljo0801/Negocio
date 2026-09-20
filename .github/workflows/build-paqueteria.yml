@@ -196,46 +196,10 @@ jobs:
               m = m.replace('    </application>', provider + '    </application>')
           manifest.write_text(m)
 
+          import base64
           kotlin_dir = Path('app/android/app/src/main/kotlin/com/angelapps/paqueteria')
           kotlin_dir.mkdir(parents=True, exist_ok=True)
-          (kotlin_dir / 'FinanceSyncProvider.kt').write_text(r'''package com.angelapps.paqueteria
-
-import android.content.ContentProvider
-import android.content.ContentValues
-import android.content.Context
-import android.database.Cursor
-import android.net.Uri
-import android.os.ParcelFileDescriptor
-import java.io.FileOutputStream
-
-class FinanceSyncProvider : ContentProvider() {
-    override fun onCreate(): Boolean = true
-
-    override fun getType(uri: Uri): String = "application/json"
-
-    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
-        val pipe = ParcelFileDescriptor.createPipe()
-        val prefs = context!!.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val snapshot = prefs.getString("flutter.finance_sync_snapshot", "{}") ?: "{}"
-        Thread {
-            try {
-                FileOutputStream(pipe[1].fileDescriptor).use { out ->
-                    out.write(snapshot.toByteArray(Charsets.UTF_8))
-                    out.flush()
-                }
-            } finally {
-                try { pipe[1].close() } catch (_: Exception) {}
-            }
-        }.start()
-        return pipe[0]
-    }
-
-    override fun query(uri: Uri, projection: Array<out String>?, selection: String?, selectionArgs: Array<out String>?, sortOrder: String?): Cursor? = null
-    override fun insert(uri: Uri, values: ContentValues?): Uri? = null
-    override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?): Int = 0
-    override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?): Int = 0
-}
-''')
+          (kotlin_dir / 'FinanceSyncProvider.kt').write_bytes(base64.b64decode('cGFja2FnZSBjb20uYW5nZWxhcHBzLnBhcXVldGVyaWEKCmltcG9ydCBhbmRyb2lkLmNvbnRlbnQuQ29udGVudFByb3ZpZGVyCmltcG9ydCBhbmRyb2lkLmNvbnRlbnQuQ29udGVudFZhbHVlcwppbXBvcnQgYW5kcm9pZC5jb250ZW50LkNvbnRleHQKaW1wb3J0IGFuZHJvaWQuZGF0YWJhc2UuQ3Vyc29yCmltcG9ydCBhbmRyb2lkLm5ldC5VcmkKaW1wb3J0IGFuZHJvaWQub3MuUGFyY2VsRmlsZURlc2NyaXB0b3IKaW1wb3J0IGphdmEuaW8uRmlsZU91dHB1dFN0cmVhbQoKY2xhc3MgRmluYW5jZVN5bmNQcm92aWRlciA6IENvbnRlbnRQcm92aWRlcigpIHsKICAgIG92ZXJyaWRlIGZ1biBvbkNyZWF0ZSgpOiBCb29sZWFuID0gdHJ1ZQoKICAgIG92ZXJyaWRlIGZ1biBnZXRUeXBlKHVyaTogVXJpKTogU3RyaW5nID0gImFwcGxpY2F0aW9uL2pzb24iCgogICAgb3ZlcnJpZGUgZnVuIG9wZW5GaWxlKHVyaTogVXJpLCBtb2RlOiBTdHJpbmcpOiBQYXJjZWxGaWxlRGVzY3JpcHRvciB7CiAgICAgICAgdmFsIHBpcGUgPSBQYXJjZWxGaWxlRGVzY3JpcHRvci5jcmVhdGVQaXBlKCkKICAgICAgICB2YWwgcHJlZnMgPSBjb250ZXh0ISEuZ2V0U2hhcmVkUHJlZmVyZW5jZXMoIkZsdXR0ZXJTaGFyZWRQcmVmZXJlbmNlcyIsIENvbnRleHQuTU9ERV9QUklWQVRFKQogICAgICAgIHZhbCBzbmFwc2hvdCA9IHByZWZzLmdldFN0cmluZygiZmx1dHRlci5maW5hbmNlX3N5bmNfc25hcHNob3QiLCAie30iKSA/OiAie30iCiAgICAgICAgVGhyZWFkIHsKICAgICAgICAgICAgdHJ5IHsKICAgICAgICAgICAgICAgIEZpbGVPdXRwdXRTdHJlYW0ocGlwZVsxXS5maWxlRGVzY3JpcHRvcikudXNlIHsgb3V0IC0+CiAgICAgICAgICAgICAgICAgICAgb3V0LndyaXRlKHNuYXBzaG90LnRvQnl0ZUFycmF5KENoYXJzZXRzLlVURl84KSkKICAgICAgICAgICAgICAgICAgICBvdXQuZmx1c2goKQogICAgICAgICAgICAgICAgfQogICAgICAgICAgICB9IGZpbmFsbHkgewogICAgICAgICAgICAgICAgdHJ5IHsgcGlwZVsxXS5jbG9zZSgpIH0gY2F0Y2ggKF86IEV4Y2VwdGlvbikge30KICAgICAgICAgICAgfQogICAgICAgIH0uc3RhcnQoKQogICAgICAgIHJldHVybiBwaXBlWzBdCiAgICB9CgogICAgb3ZlcnJpZGUgZnVuIHF1ZXJ5KHVyaTogVXJpLCBwcm9qZWN0aW9uOiBBcnJheTxvdXQgU3RyaW5nPj8sIHNlbGVjdGlvbjogU3RyaW5nPywgc2VsZWN0aW9uQXJnczogQXJyYXk8b3V0IFN0cmluZz4/LCBzb3J0T3JkZXI6IFN0cmluZz8pOiBDdXJzb3I/ID0gbnVsbAogICAgb3ZlcnJpZGUgZnVuIGluc2VydCh1cmk6IFVyaSwgdmFsdWVzOiBDb250ZW50VmFsdWVzPyk6IFVyaT8gPSBudWxsCiAgICBvdmVycmlkZSBmdW4gZGVsZXRlKHVyaTogVXJpLCBzZWxlY3Rpb246IFN0cmluZz8sIHNlbGVjdGlvbkFyZ3M6IEFycmF5PG91dCBTdHJpbmc+Pyk6IEludCA9IDAKICAgIG92ZXJyaWRlIGZ1biB1cGRhdGUodXJpOiBVcmksIHZhbHVlczogQ29udGVudFZhbHVlcz8sIHNlbGVjdGlvbjogU3RyaW5nPywgc2VsZWN0aW9uQXJnczogQXJyYXk8b3V0IFN0cmluZz4/KTogSW50ID0gMAp9Cg=='))
 
           gradle = Path('app/android/app/build.gradle.kts')
           g = gradle.read_text()
