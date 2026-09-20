@@ -170,6 +170,12 @@ class _FinanceAiSettingsPageState extends State<FinanceAiSettingsPage> {
                     'Ollama, LM Studio u otro servidor compatible.',
                   ),
                   _choice(
+                    'manager',
+                    Icons.hub_outlined,
+                    'Local AI Manager',
+                    'Usa el modelo compartido del gestor sin cargar otro GGUF dentro de Finanzas.',
+                  ),
+                  _choice(
                     'device',
                     Icons.memory,
                     'GGUF en este teléfono',
@@ -244,6 +250,21 @@ class _FinanceAiSettingsPageState extends State<FinanceAiSettingsPage> {
                     const SizedBox(height: 8),
                     const Text(
                       'Si Ollama o LM Studio corre en una PC, usa la IP local de esa PC. 127.0.0.1 solo sirve si el servidor está en el teléfono.',
+                    ),
+                  ],
+                  if (provider == 'manager') ...[
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.memory_outlined),
+                        title: const Text('Conexión automática'),
+                        subtitle: const Text(
+                          'Finanzas usará http://127.0.0.1:11435/v1 con el modelo shared. No necesitas configurar URL, modelo ni clave.',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Abre Local AI Manager y carga allí el GGUF. Si el gestor no está activo, Finanzas mostrará un aviso claro y no intentará cargar el GGUF interno.',
                     ),
                   ],
                   if (provider == 'device') ...[
