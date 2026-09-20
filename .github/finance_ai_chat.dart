@@ -339,6 +339,7 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
   bool useFinanceData = true;
   bool busy = false;
   bool autoSpanish = false;
+  bool aiControlsExpanded = true;
   Timer? _timer;
   DateTime? _started;
   double _seconds = 0;
@@ -656,64 +657,99 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
       ),
       body: Column(
         children: [
-          FutureBuilder<String>(
-            future: _providerLabel(provider),
-            builder: (context, snapshot) => Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: DropdownButtonFormField<String>(
-                value: provider,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: 'Modelo / IA',
-                  helperText: snapshot.data ?? '',
-                  border: const OutlineInputBorder(),
+          Material(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            child: InkWell(
+              onTap: busy
+                  ? null
+                  : () => setState(
+                        () => aiControlsExpanded = !aiControlsExpanded,
+                      ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.tune, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        aiControlsExpanded
+                            ? 'Ocultar controles de IA'
+                            : 'Mostrar controles de IA',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    Icon(
+                      aiControlsExpanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 30,
+                    ),
+                  ],
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'gemini', child: Text('Gemini')),
-                  DropdownMenuItem(
-                    value: 'openai',
-                    child: Text('LLM online compatible'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'local',
-                    child: Text('LLM local / Ollama'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'manager',
-                    child: Text('Local AI Manager'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'device',
-                    child: Text('GGUF en este teléfono'),
-                  ),
-                ],
-                onChanged: busy ? null : _changeProvider,
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-            child: SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'fast', label: Text('Fast')),
-                ButtonSegment(value: 'normal', label: Text('Normal')),
-                ButtonSegment(value: 'deep', label: Text('Deep')),
-              ],
-              selected: {responseMode},
-              onSelectionChanged: busy ? null : _changeMode,
+          if (aiControlsExpanded) ...[
+            FutureBuilder<String>(
+              future: _providerLabel(provider),
+              builder: (context, snapshot) => Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                child: DropdownButtonFormField<String>(
+                  value: provider,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: 'Modelo / IA',
+                    helperText: snapshot.data ?? '',
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'gemini', child: Text('Gemini')),
+                    DropdownMenuItem(
+                      value: 'openai',
+                      child: Text('LLM online compatible'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'local',
+                      child: Text('LLM local / Ollama'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'manager',
+                      child: Text('Local AI Manager'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'device',
+                      child: Text('GGUF en este teléfono'),
+                    ),
+                  ],
+                  onChanged: busy ? null : _changeProvider,
+                ),
+              ),
             ),
-          ),
-          SwitchListTile(
-            dense: true,
-            title: const Text('Usar mis finanzas'),
-            subtitle: Text(
-              useFinanceData
-                  ? 'La IA recibe el catálogo, saldos, asientos recientes, pendientes y resumen de Paquetería.'
-                  : 'La IA responde con la base contable, sin leer tus cifras actuales.',
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'fast', label: Text('Fast')),
+                  ButtonSegment(value: 'normal', label: Text('Normal')),
+                  ButtonSegment(value: 'deep', label: Text('Deep')),
+                ],
+                selected: {responseMode},
+                onSelectionChanged: busy ? null : _changeMode,
+              ),
             ),
-            value: useFinanceData,
-            onChanged: busy ? null : _toggleData,
-          ),
+            SwitchListTile(
+              dense: true,
+              title: const Text('Usar mis finanzas'),
+              subtitle: Text(
+                useFinanceData
+                    ? 'La IA recibe el catálogo, saldos, asientos recientes, pendientes y resumen de Paquetería.'
+                    : 'La IA responde con la base contable, sin leer tus cifras actuales.',
+              ),
+              value: useFinanceData,
+              onChanged: busy ? null : _toggleData,
+            ),
+          ],
           const Divider(height: 1),
           Expanded(
             child: messages.isEmpty
