@@ -2,7 +2,9 @@
 
 Checked: 2026-09-20
 
-- Repository currently identifies itself as **Finanzas Definitiva**.
-- README tracks the **version 3** source line via `Finanzas_Definitiva_Flutter_v3.zip`.
-- This repository was not overwritten with Paquetería artifacts because its current contents are a different app.
-- No downgrade was applied.
+- Repository app: **Finanzas Definitiva**
+- Latest successful GitHub Actions run: **35545554432**
+- Artifact: **Finanzas-Definitiva-APK**
+- Artifact size: **30,782,299 bytes**
+- Latest source includes the collapsible AI controls panel.
+- This repository is not Paquetería and has not been overwritten with Paquetería files.
