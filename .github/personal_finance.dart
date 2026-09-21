@@ -89,6 +89,7 @@ class PersonalFinanceStore {
     required String debitCode,
     required String creditCode,
     String? reference,
+    DateTime? date,
   }) async {
     await ensureSchema();
     final d = await AppDatabase.instance.db;
@@ -99,7 +100,7 @@ class PersonalFinanceStore {
     }
     await d.transaction((txn) async {
       final txId = await txn.insert('personal_transactions', {
-        'date': DateTime.now().toIso8601String(),
+        'date': (date ?? DateTime.now()).toIso8601String(),
         'description': description,
         'reference': reference ?? 'AI-P-${DateTime.now().millisecondsSinceEpoch}',
       });
@@ -177,6 +178,7 @@ class PersonalFinanceStore {
 
 class PersonalFinancePage extends StatefulWidget {
   const PersonalFinancePage({super.key});
+
   @override
   State<PersonalFinancePage> createState() => _PersonalFinancePageState();
 }
@@ -203,6 +205,33 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
     });
   }
 
+  Future<void> _addMovement() async {
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const PersonalMovementEditorPage(),
+      ),
+    );
+    if (saved == true) {
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Movimiento personal guardado.')),
+      );
+    }
+  }
+
+  String _shortDate(Object? value) {
+    final raw = value?.toString() ?? '';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw;
+    return parsed.year.toString().padLeft(4, '0') +
+        '-' +
+        parsed.month.toString().padLeft(2, '0') +
+        '-' +
+        parsed.day.toString().padLeft(2, '0');
+  }
+
   @override
   Widget build(BuildContext context) {
     final nonZero = balances.where(
@@ -210,12 +239,17 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
     );
     return Scaffold(
       appBar: AppBar(title: const Text('Finanzas personales')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _addMovement,
+        icon: const Icon(Icons.add),
+        label: const Text('Agregar movimiento'),
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 96),
                 children: [
                   Text(
                     'Tu dinero personal',
@@ -227,7 +261,13 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
                   const Text(
                     'Separado del negocio. Paquetería nunca entra aquí automáticamente.',
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _addMovement,
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text('Registrar movimiento manual'),
+                  ),
+                  const SizedBox(height: 18),
                   Text(
                     'Saldos',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -238,7 +278,9 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
                     ListTile(
                       dense: true,
                       leading: const Icon(Icons.account_balance_wallet_outlined),
-                      title: Text('${row['code']} · ${row['name']}'),
+                      title: Text(
+                        row['code'].toString() + ' · ' + row['name'].toString(),
+                      ),
                       trailing: Text(
                         ((row['net'] as num?)?.toDouble() ?? 0)
                             .toStringAsFixed(2),
@@ -247,7 +289,9 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
                   if (nonZero.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('Todavía no hay saldos personales registrados.'),
+                      child: Text(
+                        'Todavía no hay saldos personales registrados.',
+                      ),
                     ),
                   const Divider(height: 28),
                   Text(
@@ -260,7 +304,7 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
                     ListTile(
                       leading: const Icon(Icons.receipt_long_outlined),
                       title: Text(tx['description'].toString()),
-                      subtitle: Text(tx['date'].toString()),
+                      subtitle: Text(_shortDate(tx['date'])),
                       trailing: Text(
                         ((tx['amount'] as num?)?.toDouble() ?? 0)
                             .toStringAsFixed(2),
@@ -270,12 +314,395 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: Text(
-                        'Puedes registrar movimientos personales desde el Asistente financiero.',
+                        'Todavía no hay movimientos. Puedes registrarlos aquí manualmente o desde el Asistente financiero.',
                       ),
                     ),
                 ],
               ),
             ),
+    );
+  }
+}
+
+class PersonalMovementEditorPage extends StatefulWidget {
+  const PersonalMovementEditorPage({super.key});
+
+  @override
+  State<PersonalMovementEditorPage> createState() =>
+      _PersonalMovementEditorPageState();
+}
+
+class _PersonalMovementEditorPageState
+    extends State<PersonalMovementEditorPage> {
+  final amountController = TextEditingController();
+  final descriptionController = TextEditingController();
+
+  String kind = 'expense';
+  String debtMode = 'new';
+  String debitCode = 'P5010';
+  String creditCode = 'P1010';
+  DateTime date = DateTime.now();
+  bool saving = false;
+
+  static const kinds = <String, String>{
+    'expense': 'Gasto',
+    'income': 'Ingreso',
+    'transfer': 'Transferencia',
+    'debt': 'Deuda',
+    'manual': 'Asiento manual',
+  };
+
+  static const assetCodes = ['P1010', 'P1020', 'P1030', 'P1040', 'P1050'];
+  static const liquidCodes = ['P1010', 'P1020', 'P1030'];
+  static const liabilityCodes = ['P2010', 'P2020'];
+  static const revenueCodes = ['P4010', 'P4020', 'P4030'];
+  static const expenseCodes = [
+    'P5010',
+    'P5020',
+    'P5030',
+    'P5040',
+    'P5050',
+    'P5060',
+    'P5070',
+    'P5080',
+    'P5090',
+  ];
+
+  @override
+  void dispose() {
+    amountController.dispose();
+    descriptionController.dispose();
+    super.dispose();
+  }
+
+  String _accountName(String code) {
+    for (final row in PersonalFinanceStore.accounts) {
+      if (row[0] == code) return row[1];
+    }
+    return code;
+  }
+
+  List<String> _allCodes() =>
+      PersonalFinanceStore.accounts.map((e) => e[0]).toList();
+
+  List<String> _debitOptions() {
+    switch (kind) {
+      case 'expense':
+        return expenseCodes;
+      case 'income':
+        return liquidCodes;
+      case 'transfer':
+        return liquidCodes;
+      case 'debt':
+        if (debtMode == 'pay') return liabilityCodes;
+        return [...expenseCodes, ...assetCodes];
+      default:
+        return _allCodes();
+    }
+  }
+
+  List<String> _creditOptions() {
+    switch (kind) {
+      case 'expense':
+        return [...liquidCodes, ...liabilityCodes];
+      case 'income':
+        return revenueCodes;
+      case 'transfer':
+        return liquidCodes;
+      case 'debt':
+        if (debtMode == 'pay') return liquidCodes;
+        return liabilityCodes;
+      default:
+        return _allCodes();
+    }
+  }
+
+  void _resetAccounts() {
+    switch (kind) {
+      case 'expense':
+        debitCode = 'P5010';
+        creditCode = 'P1010';
+        break;
+      case 'income':
+        debitCode = 'P1020';
+        creditCode = 'P4010';
+        break;
+      case 'transfer':
+        debitCode = 'P1020';
+        creditCode = 'P1010';
+        break;
+      case 'debt':
+        if (debtMode == 'pay') {
+          debitCode = 'P2020';
+          creditCode = 'P1020';
+        } else {
+          debitCode = 'P5040';
+          creditCode = 'P2020';
+        }
+        break;
+      default:
+        debitCode = 'P1010';
+        creditCode = 'P3010';
+    }
+  }
+
+  String _debitLabel() {
+    switch (kind) {
+      case 'expense':
+        return 'Categoría del gasto';
+      case 'income':
+        return 'Dónde entró el dinero';
+      case 'transfer':
+        return 'Cuenta destino';
+      case 'debt':
+        return debtMode == 'pay' ? 'Deuda que disminuye' : 'Uso / destino';
+      default:
+        return 'Cuenta Debe';
+    }
+  }
+
+  String _creditLabel() {
+    switch (kind) {
+      case 'expense':
+        return 'Cómo se pagó';
+      case 'income':
+        return 'Tipo de ingreso';
+      case 'transfer':
+        return 'Cuenta origen';
+      case 'debt':
+        return debtMode == 'pay' ? 'Cómo se pagó' : 'Tipo de deuda';
+      default:
+        return 'Cuenta Haber';
+    }
+  }
+
+  String _defaultDescription() {
+    switch (kind) {
+      case 'expense':
+        return 'Gasto personal';
+      case 'income':
+        return 'Ingreso personal';
+      case 'transfer':
+        return 'Transferencia entre cuentas personales';
+      case 'debt':
+        return debtMode == 'pay' ? 'Pago de deuda personal' : 'Nueva deuda personal';
+      default:
+        return 'Asiento personal manual';
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: date,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (selected != null && mounted) {
+      setState(() => date = selected);
+    }
+  }
+
+  Future<void> _save() async {
+    final amount = double.tryParse(
+      amountController.text.trim().replaceAll(',', '.'),
+    );
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escribe un importe válido.')),
+      );
+      return;
+    }
+    if (debitCode == creditCode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La cuenta Debe y la cuenta Haber deben ser distintas.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => saving = true);
+    try {
+      await PersonalFinanceStore.addTransaction(
+        description: descriptionController.text.trim().isEmpty
+            ? _defaultDescription()
+            : descriptionController.text.trim(),
+        amount: amount,
+        debitCode: debitCode,
+        creditCode: creditCode,
+        reference:
+            'MAN-P-' + DateTime.now().millisecondsSinceEpoch.toString(),
+        date: date,
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No pude guardar el movimiento: ' + e.toString())),
+      );
+    }
+  }
+
+  Widget _accountDropdown({
+    required String label,
+    required String value,
+    required List<String> options,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      initialValue: options.contains(value) ? value : options.first,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+      items: [
+        for (final code in options)
+          DropdownMenuItem(
+            value: code,
+            child: Text(code + ' · ' + _accountName(code)),
+          ),
+      ],
+      onChanged: saving ? null : onChanged,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final debitOptions = _debitOptions();
+    final creditOptions = _creditOptions();
+    if (!debitOptions.contains(debitCode)) debitCode = debitOptions.first;
+    if (!creditOptions.contains(creditCode)) creditCode = creditOptions.first;
+
+    final dateText = date.year.toString().padLeft(4, '0') +
+        '-' +
+        date.month.toString().padLeft(2, '0') +
+        '-' +
+        date.day.toString().padLeft(2, '0');
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Agregar movimiento personal')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 110),
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: kind,
+            decoration: const InputDecoration(
+              labelText: 'Tipo de movimiento',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              for (final e in kinds.entries)
+                DropdownMenuItem(value: e.key, child: Text(e.value)),
+            ],
+            onChanged: saving
+                ? null
+                : (v) {
+                    if (v == null) return;
+                    setState(() {
+                      kind = v;
+                      _resetAccounts();
+                    });
+                  },
+          ),
+          if (kind == 'debt') ...[
+            const SizedBox(height: 12),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'new', label: Text('Nueva deuda')),
+                ButtonSegment(value: 'pay', label: Text('Pagar deuda')),
+              ],
+              selected: {debtMode},
+              onSelectionChanged: saving
+                  ? null
+                  : (values) {
+                      if (values.isEmpty) return;
+                      setState(() {
+                        debtMode = values.first;
+                        _resetAccounts();
+                      });
+                    },
+            ),
+          ],
+          const SizedBox(height: 12),
+          TextField(
+            controller: amountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Importe',
+              prefixText: '$ ',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: descriptionController,
+            decoration: InputDecoration(
+              labelText: 'Descripción',
+              hintText: _defaultDescription(),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            leading: const Icon(Icons.calendar_today_outlined),
+            title: const Text('Fecha'),
+            subtitle: Text(dateText),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: saving ? null : _pickDate,
+          ),
+          const SizedBox(height: 12),
+          _accountDropdown(
+            label: _debitLabel(),
+            value: debitCode,
+            options: debitOptions,
+            onChanged: (v) {
+              if (v != null) setState(() => debitCode = v);
+            },
+          ),
+          const SizedBox(height: 12),
+          _accountDropdown(
+            label: _creditLabel(),
+            value: creditCode,
+            options: creditOptions,
+            onChanged: (v) {
+              if (v != null) setState(() => creditCode = v);
+            },
+          ),
+          const SizedBox(height: 14),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'Vista previa\n\nDEBE  ' +
+                    debitCode +
+                    ' · ' +
+                    _accountName(debitCode) +
+                    '\nHABER  ' +
+                    creditCode +
+                    ' · ' +
+                    _accountName(creditCode),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: saving ? null : _save,
+            icon: saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined),
+            label: Text(saving ? 'Guardando…' : 'Guardar movimiento'),
+          ),
+        ],
+      ),
     );
   }
 }
