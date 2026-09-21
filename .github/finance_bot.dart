@@ -155,6 +155,10 @@ REGLAS:
 - Si es una explicación o consejo sin asiento, usa action "answer".
 - Solo usa action "proposal" cuando la operación pueda representarse correctamente con exactamente una cuenta al Debe y una al Haber.
 - Usa únicamente códigos que existan en el catálogo de cuentas.
+- Nunca confundas la dirección de una deuda: "me deben", "el cliente me debe" o "me tienen que pagar" puede implicar Cuentas por cobrar; "yo debo", "le debo", "tengo que pagarle" o "debo a alguien" implica una obligación/pasivo y NUNCA Cuentas por cobrar.
+- Una frase como "le debo a mi amigo 500" NO dice por qué existe la deuda ni confirma que entró efectivo. Debes usar action "clarify" y preguntar si fue un préstamo recibido o una compra/gasto pendiente de pago.
+- Solo registra Debe Efectivo / Haber Préstamo cuando el usuario confirme que recibió el dinero como préstamo.
+- Si la deuda proviene de una compra o gasto a crédito, el Debe depende de lo adquirido o gastado y el Haber normalmente será Cuentas por pagar.
 - Una compra pagada por el negocio por cuenta de un cliente que luego debe reembolsarla es un adelanto recuperable: Debe Cuentas por cobrar y Haber Efectivo, salvo que el usuario diga que fue inventario o mercancía para vender.
 - Ejemplo clave: "hice una compra de 300 y el cliente todavía me tiene que pagar" normalmente significa Debe 1020 Cuentas por cobrar 300 y Haber 1010 Efectivo 300.
 - Si una operación requiere más de dos líneas, explícalo y usa action "answer" en vez de forzar un asiento incorrecto.
@@ -271,6 +275,45 @@ $original
   }
 
   Future<_BotReply> _answer(String original) async {
+    final normalized = _norm(original);
+    final amount = _amount(original);
+
+    // Deterministic guard for debt direction. A bare statement that the user
+    // owes someone does not tell us whether cash was borrowed or whether a
+    // purchase/expense is still unpaid, so no journal entry is safe yet.
+    final userOwesSomeone = amount != null &&
+        _has(normalized, [
+          'le debo ',
+          'yo debo ',
+          'debo a ',
+          'debo pagarle',
+          'tengo que pagarle',
+          'tengo una deuda con',
+        ]);
+    final originAlreadyClear = _has(normalized, [
+      'me presto',
+      'me prestaron',
+      'prestamo',
+      'compre',
+      'compra',
+      'mercancia',
+      'inventario',
+      'gasolina',
+      'alquiler',
+      'renta',
+      'servicio',
+      'factura',
+      'gasto',
+      'equipo',
+      'maquinaria',
+    ]);
+
+    if (userOwesSomeone && !originAlreadyClear) {
+      return _BotReply(
+        'Entiendo que debes ${amount.toStringAsFixed(2)}, pero necesito saber qué originó esa deuda antes de proponerte un asiento. ¿Esa persona te prestó el dinero y lo recibiste, o le debes por una compra o gasto que todavía no has pagado?',
+      );
+    }
+
     try {
       return await _answerWithAi(original);
     } catch (e) {
@@ -311,6 +354,14 @@ $original
     if (_has(s, ['remesa', 'remesas']) && amount == null) {
       return const _BotReply(
         'Las remesas conviene registrarlas desde Plan → Remesas porque esa pantalla controla principal, comisión, pendiente y cobro. El libro diario se actualiza cuando registras y cuando cobras la remesa.',
+      );
+    }
+
+    if (_has(s, ['le debo', 'yo debo', 'debo a ', 'tengo una deuda con']) &&
+        amount != null &&
+        !_has(s, ['me presto', 'me prestaron', 'prestamo', 'compre', 'compra', 'gasto', 'mercancia', 'inventario'])) {
+      return _BotReply(
+        'Entiendo que debes ${amount.toStringAsFixed(2)}, pero necesito saber el origen de la deuda. ¿Fue un préstamo que recibiste o una compra/gasto pendiente de pago?',
       );
     }
 
