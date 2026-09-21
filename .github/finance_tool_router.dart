@@ -111,7 +111,8 @@ class FinanceToolRouter {
 
     final wantsPersonal = broad || _has(q, [
       'personal', 'personales', 'mio', 'mia', 'mios', 'mias',
-      'tarjeta personal', 'dinero personal',
+      'tarjeta personal', 'tarjetas', 'credito', 'crédito', 'ahorro',
+      'ahorros', 'banco', 'bancos', 'dinero personal',
     ]);
     final wantsBusiness = broad || _has(q, [
       'negocio', 'empresa', 'ventas', 'venta', 'gasto', 'gastos', 'ingreso',
@@ -120,7 +121,8 @@ class FinanceToolRouter {
     ]);
     final wantsBalances = broad || _has(q, [
       'saldo', 'saldos', 'cuenta', 'cuentas', 'patrimonio', 'efectivo',
-      'balance',
+      'balance', 'tarjeta', 'tarjetas', 'credito', 'crédito', 'ahorro',
+      'ahorros', 'banco', 'bancos', 'limite', 'límite',
     ]);
     final wantsDebts = broad || _has(q, [
       'deuda', 'deudas', 'debo', 'deben', 'cobrar', 'pagar', 'pendiente',
@@ -251,18 +253,42 @@ class FinanceToolRouter {
       }
 
       final personal = await d.rawQuery('''
-        SELECT a.code,a.name,a.type,
+        SELECT a.code,a.name,a.type,a.bank_name,a.account_kind,
+          a.credit_limit,a.payment_due_day,a.reminder_enabled,
+          a.reminder_days_before,
           COALESCE(SUM(l.debit-l.credit),0) AS net
         FROM personal_accounts a
         LEFT JOIN personal_journal_lines l ON l.account_id=a.id
         GROUP BY a.id
         ORDER BY a.code
       ''');
-      b.writeln('\n[TOOL: PERSONAL · SALDOS]');
+      b.writeln('\n[TOOL: PERSONAL · CUENTAS, SALDOS Y TARJETAS]');
       for (final row in personal) {
         final n = (row['net'] as num?)?.toDouble() ?? 0;
-        if (n.abs() >= 0.005) {
-          b.writeln('- ${row['code']} · ${row['name']}: ${n.toStringAsFixed(2)}');
+        final balance = row['type'] == 'liability' ? -n : n;
+        final bank = row['bank_name']?.toString().trim() ?? '';
+        final kind = row['account_kind']?.toString() ?? '';
+        final limit = (row['credit_limit'] as num?)?.toDouble() ?? 0;
+        final due = (row['payment_due_day'] as num?)?.toInt() ?? 0;
+        if (balance.abs() >= 0.005 ||
+            bank.isNotEmpty ||
+            kind == 'savings' ||
+            kind == 'credit_card') {
+          b.write(
+            '- ${row['code']} · ${row['name']}'
+            '${bank.isEmpty ? '' : ' · banco $bank'}'
+            ' · tipo $kind · saldo ${balance.toStringAsFixed(2)}',
+          );
+          if (kind == 'credit_card') {
+            final available = (limit - balance).clamp(0, double.infinity);
+            b.write(
+              ' · límite ${limit.toStringAsFixed(2)}'
+              ' · disponible ${available.toStringAsFixed(2)}'
+              '${due > 0 ? ' · pago día $due' : ''}'
+              '${row['reminder_enabled'] == 1 ? ' · alarma activa' : ''}',
+            );
+          }
+          b.writeln();
         }
       }
     }
