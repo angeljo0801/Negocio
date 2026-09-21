@@ -126,6 +126,66 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
     return <String, dynamic>{};
   }
 
+  Future<Map<String, dynamic>> _verifyAiDecision({
+    required String original,
+    required String catalog,
+    required String history,
+    required Map<String, dynamic> draft,
+  }) async {
+    final prompt = '''
+Eres el verificador contable final de Finanzas Definitiva.
+
+Tu trabajo NO es repetir la primera respuesta. Debes comparar cuidadosamente:
+1. el mensaje original del usuario,
+2. el historial reciente,
+3. la propuesta o decisión preliminar,
+4. el catálogo real de cuentas.
+
+OBJETIVO:
+Decidir si la interpretación preliminar realmente corresponde al lenguaje natural del usuario y si el asiento contable es correcto antes de enseñárselo.
+
+REGLAS OBLIGATORIAS:
+- No inventes hechos que el usuario no haya dicho.
+- No cambies quién debe a quién.
+- "Me deben" y "yo debo" son situaciones opuestas.
+- Si falta el origen de una deuda, la forma de pago o cualquier dato esencial para elegir cuentas correctamente, usa action "clarify".
+- Solo usa action "proposal" si el mensaje y el historial justifican claramente una cuenta Debe, una cuenta Haber y un importe.
+- Debe y Haber deben representar correctamente el efecto económico.
+- Usa únicamente códigos existentes en el catálogo.
+- Si la propuesta preliminar es incorrecta pero puedes corregirla con certeza usando lo que el usuario ya dijo, devuelve la propuesta corregida.
+- Si la consulta solo pide explicación o consejo, usa action "answer".
+- No guardes nada.
+- Tu salida será la decisión FINAL que verá el usuario.
+
+Devuelve SOLO JSON válido:
+{"reply":"texto breve y claro","action":"proposal|clarify|answer","description":"","amount":0,"debitCode":"","creditCode":"","cashClass":"operating|investing|financing|noncash"}
+
+CATÁLOGO:
+$catalog
+
+HISTORIAL:
+$history
+
+MENSAJE ORIGINAL:
+$original
+
+DECISIÓN PRELIMINAR:
+${jsonEncode(draft)}
+''';
+
+    final raw = await FinanceAiService.askConfigured(
+      prompt: prompt,
+      responseMode: 'fast',
+    );
+    final verified = _decodeAiObject(raw);
+    if (verified.isEmpty) {
+      throw Exception(
+        'La segunda revisión de IA no devolvió una decisión válida.',
+      );
+    }
+    return verified;
+  }
+
   double _aiAmount(dynamic value) {
     if (value is num) return value.toDouble();
     final raw = value == null ? '' : value.toString().trim().replaceAll(',', '.');
@@ -180,15 +240,25 @@ $original
       prompt: prompt,
       responseMode: 'fast',
     );
-    final obj = _decodeAiObject(raw);
+    final draft = _decodeAiObject(raw);
 
-    if (obj.isEmpty) {
+    if (draft.isEmpty) {
       final plain = raw.trim();
       if (plain.isEmpty) {
         throw Exception('La IA no devolvió una respuesta.');
       }
       return _BotReply(plain);
     }
+
+    // Mandatory second AI pass. Nothing from the first interpretation is shown
+    // until the verifier compares it with the user's message, history and the
+    // real account catalog.
+    final obj = await _verifyAiDecision(
+      original: original,
+      catalog: catalog,
+      history: history,
+      draft: draft,
+    );
 
     final reply = (obj['reply'] ?? '').toString().trim();
     final action = (obj['action'] ?? 'answer').toString().trim().toLowerCase();
