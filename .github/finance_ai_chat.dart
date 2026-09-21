@@ -11,6 +11,7 @@ import 'finance_ai_settings.dart';
 import 'finance_knowledge.dart';
 import 'finance_learning.dart';
 import 'personal_finance.dart';
+import 'finance_tool_router.dart';
 
 class FinanceAiMessage {
   const FinanceAiMessage({
@@ -309,6 +310,8 @@ AL ACONSEJAR:
     required bool includeLiveData,
   }) async {
     final live = includeLiveData ? await buildLiveContext() : '';
+    final toolResults =
+        includeLiveData ? await FinanceToolRouter.query(question) : '';
     final baseRetrieved = FinanceKnowledge.retrieve(
       '$question\n${conversation(history)}',
       topK: 6,
@@ -338,6 +341,17 @@ CONOCIMIENTO LOCAL RECUPERADO POR EMBEDDINGS:
 $retrieved
 
 ${includeLiveData ? live : 'NO SE INCLUYERON DATOS FINANCIEROS EN ESTA CONSULTA.'}
+
+RESULTADOS DE HERRAMIENTAS INTERNAS:
+${toolResults.isEmpty ? 'No fue necesario consultar herramientas internas.' : toolResults}
+
+REGLAS DE USO DE HERRAMIENTAS:
+- Los resultados anteriores provienen directamente de la base local de Finanzas Definitiva.
+- Úsalos como fuente principal para preguntas sobre registros, saldos, historial, deudas, remesas y Paquetería.
+- Si una búsqueda devuelve 0 resultados, dilo; no inventes registros.
+- Paquetería es exclusivamente Negocio aunque aparezca junto a información Personal.
+- Si el usuario pide una suma o comparación, calcula usando los resultados recuperados y explica qué ámbito utilizaste.
+- Si la búsqueda fue truncada, aclara que puede haber más registros y pide afinar el criterio si hace falta.
 
 CONVERSACIÓN RECIENTE:
 ${conversation(history)}
