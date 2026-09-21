@@ -633,7 +633,7 @@ class _PersonalMovementEditorPageState
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Importe',
-              prefixText: '$ ',
+              prefixText: '\$ ',
               border: OutlineInputBorder(),
             ),
           ),
