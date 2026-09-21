@@ -1,6 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'database.dart';
+
+class PersonalReminderBridge {
+  static const _channel =
+      MethodChannel('com.angel.finanzas/personal_reminders');
+
+  static Future<bool> requestPermission() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestPermission') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> schedule({
+    required int accountId,
+    required String title,
+    required String bank,
+    required int dueDay,
+    required int daysBefore,
+  }) async {
+    await _channel.invokeMethod('schedule', {
+      'id': accountId,
+      'title': title,
+      'bank': bank,
+      'dueDay': dueDay,
+      'daysBefore': daysBefore,
+    });
+  }
+
+  static Future<void> cancel(int accountId) async {
+    try {
+      await _channel.invokeMethod('cancel', {'id': accountId});
+    } catch (_) {}
+  }
+}
 
 class PersonalFinanceStore {
   static const accounts = <List<String>>[
@@ -27,6 +63,44 @@ class PersonalFinanceStore {
     ['P5090', 'Otros gastos personales', 'expense'],
   ];
 
+  static const _systemKinds = <String, String>{
+    'P1010': 'cash',
+    'P1020': 'checking',
+    'P1030': 'savings',
+    'P1040': 'receivable',
+    'P1050': 'investment',
+    'P2010': 'credit_card',
+    'P2020': 'debt',
+    'P3010': 'equity',
+    'P3900': 'transfer_equity',
+    'P4010': 'income',
+    'P4020': 'income',
+    'P4030': 'income',
+    'P5010': 'expense',
+    'P5020': 'expense',
+    'P5030': 'expense',
+    'P5040': 'expense',
+    'P5050': 'expense',
+    'P5060': 'expense',
+    'P5070': 'expense',
+    'P5080': 'expense',
+    'P5090': 'expense',
+  };
+
+  static Future<void> _ensureColumn(
+    dynamic db,
+    String name,
+    String definition,
+  ) async {
+    final columns = await db.rawQuery('PRAGMA table_info(personal_accounts)');
+    final exists = columns.any((row) => row['name']?.toString() == name);
+    if (!exists) {
+      await db.execute(
+        'ALTER TABLE personal_accounts ADD COLUMN $name $definition',
+      );
+    }
+  }
+
   static Future<void> ensureSchema() async {
     final d = await AppDatabase.instance.db;
     await d.execute('''
@@ -34,9 +108,32 @@ class PersonalFinanceStore {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
-        type TEXT NOT NULL
+        type TEXT NOT NULL,
+        bank_name TEXT NOT NULL DEFAULT '',
+        account_kind TEXT NOT NULL DEFAULT 'generic',
+        credit_limit REAL NOT NULL DEFAULT 0,
+        payment_due_day INTEGER NOT NULL DEFAULT 0,
+        reminder_enabled INTEGER NOT NULL DEFAULT 0,
+        reminder_days_before INTEGER NOT NULL DEFAULT 1,
+        is_system INTEGER NOT NULL DEFAULT 1
       )
     ''');
+    await _ensureColumn(d, 'bank_name', "TEXT NOT NULL DEFAULT ''");
+    await _ensureColumn(
+      d,
+      'account_kind',
+      "TEXT NOT NULL DEFAULT 'generic'",
+    );
+    await _ensureColumn(d, 'credit_limit', 'REAL NOT NULL DEFAULT 0');
+    await _ensureColumn(d, 'payment_due_day', 'INTEGER NOT NULL DEFAULT 0');
+    await _ensureColumn(d, 'reminder_enabled', 'INTEGER NOT NULL DEFAULT 0');
+    await _ensureColumn(
+      d,
+      'reminder_days_before',
+      'INTEGER NOT NULL DEFAULT 1',
+    );
+    await _ensureColumn(d, 'is_system', 'INTEGER NOT NULL DEFAULT 1');
+
     await d.execute('''
       CREATE TABLE IF NOT EXISTS personal_transactions(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,20 +151,39 @@ class PersonalFinanceStore {
         credit REAL NOT NULL DEFAULT 0
       )
     ''');
+
     for (final a in accounts) {
       await d.rawInsert(
-        'INSERT OR IGNORE INTO personal_accounts(code,name,type) VALUES(?,?,?)',
+        'INSERT OR IGNORE INTO personal_accounts(code,name,type,is_system) VALUES(?,?,?,1)',
         a,
+      );
+    }
+    for (final entry in _systemKinds.entries) {
+      await d.update(
+        'personal_accounts',
+        {
+          'account_kind': entry.value,
+          'is_system': 1,
+        },
+        where: 'code=?',
+        whereArgs: [entry.key],
       );
     }
   }
 
-  static Future<String> catalogText() async {
+  static Future<List<Map<String, dynamic>>> allAccounts() async {
     await ensureSchema();
     final d = await AppDatabase.instance.db;
-    final rows = await d.query('personal_accounts', orderBy: 'code');
+    return d.query('personal_accounts', orderBy: 'code');
+  }
+
+  static Future<String> catalogText() async {
+    final rows = await allAccounts();
     return rows
-        .map((r) => '${r['code']}|${r['name']}|${r['type']}|personal')
+        .map(
+          (r) =>
+              '${r['code']}|${r['name']}|${r['type']}|${r['account_kind']}|${r['bank_name']}|personal',
+        )
         .join('\n');
   }
 
@@ -102,7 +218,8 @@ class PersonalFinanceStore {
       final txId = await txn.insert('personal_transactions', {
         'date': (date ?? DateTime.now()).toIso8601String(),
         'description': description,
-        'reference': reference ?? 'AI-P-${DateTime.now().millisecondsSinceEpoch}',
+        'reference':
+            reference ?? 'AI-P-${DateTime.now().millisecondsSinceEpoch}',
       });
       await txn.insert('personal_journal_lines', {
         'transaction_id': txId,
@@ -119,41 +236,208 @@ class PersonalFinanceStore {
     });
   }
 
-  static Future<String> contextText() async {
+  static Future<String> _nextCode(String kind) async {
+    final rows = await allAccounts();
+    final used = rows.map((e) => e['code']?.toString() ?? '').toSet();
+    final base = kind == 'savings'
+        ? 1100
+        : kind == 'checking'
+            ? 1200
+            : kind == 'credit_card'
+                ? 2100
+                : 1300;
+    for (var i = 1; i < 800; i++) {
+      final code = 'P${(base + i).toString().padLeft(4, '0')}';
+      if (!used.contains(code)) return code;
+    }
+    throw Exception('No pude generar un código para la nueva cuenta.');
+  }
+
+  static Future<int> createFinancialAccount({
+    required String name,
+    required String bankName,
+    required String kind,
+    double creditLimit = 0,
+    double initialBalance = 0,
+    int paymentDueDay = 0,
+    bool reminderEnabled = false,
+    int reminderDaysBefore = 1,
+    DateTime? initialDate,
+  }) async {
+    await ensureSchema();
+    final cleanName = name.trim();
+    final cleanBank = bankName.trim();
+    if (cleanName.isEmpty) {
+      throw Exception('Escribe un nombre para la cuenta.');
+    }
+    if (!const {'savings', 'checking', 'credit_card'}.contains(kind)) {
+      throw Exception('Tipo de cuenta no válido.');
+    }
+
+    final d = await AppDatabase.instance.db;
+    final code = await _nextCode(kind);
+    final type = kind == 'credit_card' ? 'liability' : 'asset';
+    final id = await d.insert('personal_accounts', {
+      'code': code,
+      'name': cleanName,
+      'type': type,
+      'bank_name': cleanBank,
+      'account_kind': kind,
+      'credit_limit': kind == 'credit_card' ? creditLimit : 0.0,
+      'payment_due_day':
+          kind == 'credit_card' ? paymentDueDay.clamp(0, 31) : 0,
+      'reminder_enabled':
+          kind == 'credit_card' && reminderEnabled ? 1 : 0,
+      'reminder_days_before':
+          kind == 'credit_card' ? reminderDaysBefore.clamp(0, 30) : 1,
+      'is_system': 0,
+    });
+
+    if (initialBalance > 0.005) {
+      if (kind == 'credit_card') {
+        await addTransaction(
+          description: 'Saldo inicial · $cleanName',
+          amount: initialBalance,
+          debitCode: 'P3010',
+          creditCode: code,
+          reference: 'INIT-P-${DateTime.now().millisecondsSinceEpoch}',
+          date: initialDate,
+        );
+      } else {
+        await addTransaction(
+          description: 'Saldo inicial · $cleanName',
+          amount: initialBalance,
+          debitCode: code,
+          creditCode: 'P3010',
+          reference: 'INIT-P-${DateTime.now().millisecondsSinceEpoch}',
+          date: initialDate,
+        );
+      }
+    }
+
+    if (kind == 'credit_card' &&
+        reminderEnabled &&
+        paymentDueDay >= 1 &&
+        paymentDueDay <= 31) {
+      await PersonalReminderBridge.schedule(
+        accountId: id,
+        title: cleanName,
+        bank: cleanBank,
+        dueDay: paymentDueDay,
+        daysBefore: reminderDaysBefore,
+      );
+    }
+    return id;
+  }
+
+  static Future<void> updateFinancialAccount({
+    required int id,
+    required String name,
+    required String bankName,
+    required String kind,
+    double creditLimit = 0,
+    int paymentDueDay = 0,
+    bool reminderEnabled = false,
+    int reminderDaysBefore = 1,
+  }) async {
     await ensureSchema();
     final d = await AppDatabase.instance.db;
-    final balances = await d.rawQuery('''
-      SELECT a.code,a.name,a.type,
-        COALESCE(SUM(l.debit-l.credit),0) AS net
+    await d.update(
+      'personal_accounts',
+      {
+        'name': name.trim(),
+        'bank_name': bankName.trim(),
+        'credit_limit': kind == 'credit_card' ? creditLimit : 0.0,
+        'payment_due_day':
+            kind == 'credit_card' ? paymentDueDay.clamp(0, 31) : 0,
+        'reminder_enabled':
+            kind == 'credit_card' && reminderEnabled ? 1 : 0,
+        'reminder_days_before':
+            kind == 'credit_card' ? reminderDaysBefore.clamp(0, 30) : 1,
+      },
+      where: 'id=?',
+      whereArgs: [id],
+    );
+
+    await PersonalReminderBridge.cancel(id);
+    if (kind == 'credit_card' &&
+        reminderEnabled &&
+        paymentDueDay >= 1 &&
+        paymentDueDay <= 31) {
+      await PersonalReminderBridge.schedule(
+        accountId: id,
+        title: name.trim(),
+        bank: bankName.trim(),
+        dueDay: paymentDueDay,
+        daysBefore: reminderDaysBefore,
+      );
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> accountSummaries() async {
+    await ensureSchema();
+    final d = await AppDatabase.instance.db;
+    return d.rawQuery('''
+      SELECT
+        a.id,a.code,a.name,a.type,a.bank_name,a.account_kind,a.credit_limit,
+        a.payment_due_day,a.reminder_enabled,a.reminder_days_before,a.is_system,
+        COALESCE(SUM(l.debit),0) AS debit_total,
+        COALESCE(SUM(l.credit),0) AS credit_total,
+        MAX(t.date) AS last_date
       FROM personal_accounts a
       LEFT JOIN personal_journal_lines l ON l.account_id=a.id
+      LEFT JOIN personal_transactions t ON t.id=l.transaction_id
+      WHERE a.account_kind IN ('cash','checking','savings','credit_card')
       GROUP BY a.id
-      ORDER BY a.code
+      ORDER BY
+        CASE a.account_kind
+          WHEN 'savings' THEN 1
+          WHEN 'checking' THEN 2
+          WHEN 'credit_card' THEN 3
+          ELSE 4
+        END,
+        a.bank_name,a.name
     ''');
-    final recent = await d.rawQuery('''
-      SELECT t.id,t.date,t.description,t.reference
-      FROM personal_transactions t
-      ORDER BY t.id DESC LIMIT 8
-    ''');
+  }
+
+  static double displayBalance(Map<String, dynamic> row) {
+    final debit = (row['debit_total'] as num?)?.toDouble() ?? 0;
+    final credit = (row['credit_total'] as num?)?.toDouble() ?? 0;
+    return row['type'] == 'liability' ? credit - debit : debit - credit;
+  }
+
+  static Future<String> contextText() async {
+    await ensureSchema();
+    final balances = await accountBalances();
+    final recentRows = await recent();
     final b = StringBuffer('FINANZAS PERSONALES DEL USUARIO\n');
     b.writeln('SALDOS PERSONALES:');
     for (final row in balances) {
       final net = (row['net'] as num?)?.toDouble() ?? 0;
       if (net.abs() < 0.005) continue;
-      b.writeln('- ${row['code']} · ${row['name']}: ${net.toStringAsFixed(2)}');
+      final bank = row['bank_name']?.toString().trim() ?? '';
+      final kind = row['account_kind']?.toString() ?? '';
+      final display = row['type'] == 'liability' ? -net : net;
+      b.writeln(
+        '- ${row['code']} · ${row['name']}'
+        '${bank.isEmpty ? '' : ' · banco $bank'}'
+        ' · $kind: ${display.toStringAsFixed(2)}',
+      );
     }
     b.writeln('TRANSACCIONES PERSONALES RECIENTES:');
-    for (final tx in recent) {
+    for (final tx in recentRows.take(8)) {
       b.writeln('- ${tx['date']} · ${tx['description']}');
     }
     return b.toString();
   }
 
-  static Future<List<Map<String, dynamic>>> balances() async {
+  static Future<List<Map<String, dynamic>>> accountBalances() async {
     await ensureSchema();
     final d = await AppDatabase.instance.db;
     return d.rawQuery('''
-      SELECT a.code,a.name,a.type,
+      SELECT a.id,a.code,a.name,a.type,a.bank_name,a.account_kind,
+        a.credit_limit,a.payment_due_day,a.reminder_enabled,
+        a.reminder_days_before,a.is_system,
         COALESCE(SUM(l.debit-l.credit),0) AS net
       FROM personal_accounts a
       LEFT JOIN personal_journal_lines l ON l.account_id=a.id
@@ -161,6 +445,8 @@ class PersonalFinanceStore {
       ORDER BY a.code
     ''');
   }
+
+  static Future<List<Map<String, dynamic>>> balances() => accountBalances();
 
   static Future<List<Map<String, dynamic>>> recent() async {
     await ensureSchema();
@@ -171,7 +457,7 @@ class PersonalFinanceStore {
       FROM personal_transactions t
       LEFT JOIN personal_journal_lines l ON l.transaction_id=t.id
       GROUP BY t.id
-      ORDER BY t.id DESC LIMIT 25
+      ORDER BY t.date DESC,t.id DESC LIMIT 40
     ''');
   }
 }
@@ -221,22 +507,49 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
     }
   }
 
+  Future<void> _openAccounts() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PersonalAccountsPage()),
+    );
+    await _load();
+  }
+
+  Future<void> _openBalanceSheet() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PersonalBalanceSheetPage()),
+    );
+    await _load();
+  }
+
   String _shortDate(Object? value) {
     final raw = value?.toString() ?? '';
     final parsed = DateTime.tryParse(raw);
     if (parsed == null) return raw;
-    return parsed.year.toString().padLeft(4, '0') +
-        '-' +
-        parsed.month.toString().padLeft(2, '0') +
-        '-' +
-        parsed.day.toString().padLeft(2, '0');
+    return '${parsed.year.toString().padLeft(4, '0')}-'
+        '${parsed.month.toString().padLeft(2, '0')}-'
+        '${parsed.day.toString().padLeft(2, '0')}';
+  }
+
+  double _shownBalance(Map<String, dynamic> row) {
+    final net = (row['net'] as num?)?.toDouble() ?? 0;
+    return row['type'] == 'liability' ? -net : net;
   }
 
   @override
   Widget build(BuildContext context) {
     final nonZero = balances.where(
-      (r) => (((r['net'] as num?)?.toDouble() ?? 0).abs() >= 0.005),
+      (r) => (_shownBalance(r).abs() >= 0.005),
     );
+    final assets = balances
+        .where((r) => r['type'] == 'asset')
+        .fold<double>(0, (sum, row) => sum + _shownBalance(row));
+    final liabilities = balances
+        .where((r) => r['type'] == 'liability')
+        .fold<double>(0, (sum, row) => sum + _shownBalance(row));
+    final netWorth = assets - liabilities;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Finanzas personales')),
       floatingActionButton: FloatingActionButton.extended(
@@ -262,10 +575,37 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
                     'Separado del negocio. Paquetería nunca entra aquí automáticamente.',
                   ),
                   const SizedBox(height: 12),
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.account_balance_wallet_outlined),
+                      title: const Text('Patrimonio neto personal'),
+                      subtitle: Text(
+                        'Activos ${assets.toStringAsFixed(2)} · '
+                        'Pasivos ${liabilities.toStringAsFixed(2)}',
+                      ),
+                      trailing: Text(
+                        netWorth.toStringAsFixed(2),
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   FilledButton.icon(
                     onPressed: _addMovement,
                     icon: const Icon(Icons.add_circle_outline),
                     label: const Text('Registrar movimiento manual'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _openAccounts,
+                    icon: const Icon(Icons.account_balance_outlined),
+                    label: const Text('Cuentas, ahorros y tarjetas'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _openBalanceSheet,
+                    icon: const Icon(Icons.balance_outlined),
+                    label: const Text('Balance General personal'),
                   ),
                   const SizedBox(height: 18),
                   Text(
@@ -277,13 +617,21 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
                   for (final row in nonZero)
                     ListTile(
                       dense: true,
-                      leading: const Icon(Icons.account_balance_wallet_outlined),
-                      title: Text(
-                        row['code'].toString() + ' · ' + row['name'].toString(),
+                      leading: Icon(
+                        row['type'] == 'liability'
+                            ? Icons.credit_card_outlined
+                            : Icons.account_balance_wallet_outlined,
                       ),
+                      title: Text(
+                        '${row['code']} · ${row['name']}',
+                      ),
+                      subtitle:
+                          (row['bank_name']?.toString().trim().isNotEmpty ??
+                                  false)
+                              ? Text(row['bank_name'].toString())
+                              : null,
                       trailing: Text(
-                        ((row['net'] as num?)?.toDouble() ?? 0)
-                            .toStringAsFixed(2),
+                        _shownBalance(row).toStringAsFixed(2),
                       ),
                     ),
                   if (nonZero.isEmpty)
@@ -324,6 +672,684 @@ class _PersonalFinancePageState extends State<PersonalFinancePage> {
   }
 }
 
+class PersonalAccountsPage extends StatefulWidget {
+  const PersonalAccountsPage({super.key});
+
+  @override
+  State<PersonalAccountsPage> createState() => _PersonalAccountsPageState();
+}
+
+class _PersonalAccountsPageState extends State<PersonalAccountsPage> {
+  bool loading = true;
+  List<Map<String, dynamic>> rows = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final data = await PersonalFinanceStore.accountSummaries();
+    if (!mounted) return;
+    setState(() {
+      rows = data;
+      loading = false;
+    });
+  }
+
+  Future<void> _openEditor([Map<String, dynamic>? existing]) async {
+    final saved = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PersonalFinancialAccountEditorPage(
+          existing: existing,
+        ),
+      ),
+    );
+    if (saved == true) await _load();
+  }
+
+  String _date(Object? raw) {
+    final d = DateTime.tryParse(raw?.toString() ?? '');
+    if (d == null) return '—';
+    return '${d.year.toString().padLeft(4, '0')}-'
+        '${d.month.toString().padLeft(2, '0')}-'
+        '${d.day.toString().padLeft(2, '0')}';
+  }
+
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 8),
+        child: Text(
+          text,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+        ),
+      );
+
+  Widget _savingsTable(List<Map<String, dynamic>> data) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columns: const [
+          DataColumn(label: Text('Banco')),
+          DataColumn(label: Text('Cuenta')),
+          DataColumn(label: Text('Saldo')),
+          DataColumn(label: Text('Aportado')),
+          DataColumn(label: Text('Retirado')),
+          DataColumn(label: Text('Último movimiento')),
+        ],
+        rows: [
+          for (final row in data)
+            DataRow(
+              onSelectChanged:
+                  (_) => _openEditor(row),
+              cells: [
+                DataCell(Text(
+                  (row['bank_name']?.toString().trim().isEmpty ?? true)
+                      ? 'Sin banco'
+                      : row['bank_name'].toString(),
+                )),
+                DataCell(Text(row['name'].toString())),
+                DataCell(Text(
+                  PersonalFinanceStore.displayBalance(row).toStringAsFixed(2),
+                )),
+                DataCell(Text(
+                  ((row['debit_total'] as num?)?.toDouble() ?? 0)
+                      .toStringAsFixed(2),
+                )),
+                DataCell(Text(
+                  ((row['credit_total'] as num?)?.toDouble() ?? 0)
+                      .toStringAsFixed(2),
+                )),
+                DataCell(Text(_date(row['last_date']))),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bankTable(List<Map<String, dynamic>> data) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columns: const [
+          DataColumn(label: Text('Banco')),
+          DataColumn(label: Text('Cuenta')),
+          DataColumn(label: Text('Tipo')),
+          DataColumn(label: Text('Saldo')),
+          DataColumn(label: Text('Último movimiento')),
+        ],
+        rows: [
+          for (final row in data)
+            DataRow(
+              onSelectChanged: (_) => _openEditor(row),
+              cells: [
+                DataCell(Text(
+                  (row['bank_name']?.toString().trim().isEmpty ?? true)
+                      ? 'Sin banco'
+                      : row['bank_name'].toString(),
+                )),
+                DataCell(Text(row['name'].toString())),
+                DataCell(Text(
+                  row['account_kind'] == 'checking'
+                      ? 'Banco / corriente'
+                      : 'Efectivo',
+                )),
+                DataCell(Text(
+                  PersonalFinanceStore.displayBalance(row).toStringAsFixed(2),
+                )),
+                DataCell(Text(_date(row['last_date']))),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _creditTable(List<Map<String, dynamic>> data) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columns: const [
+          DataColumn(label: Text('Banco')),
+          DataColumn(label: Text('Tarjeta')),
+          DataColumn(label: Text('Deuda')),
+          DataColumn(label: Text('Límite')),
+          DataColumn(label: Text('Disponible')),
+          DataColumn(label: Text('Pago')),
+          DataColumn(label: Text('Alarma')),
+        ],
+        rows: [
+          for (final row in data)
+            DataRow(
+              onSelectChanged: (_) => _openEditor(row),
+              cells: [
+                DataCell(Text(
+                  (row['bank_name']?.toString().trim().isEmpty ?? true)
+                      ? 'Sin banco'
+                      : row['bank_name'].toString(),
+                )),
+                DataCell(Text(row['name'].toString())),
+                DataCell(Text(
+                  PersonalFinanceStore.displayBalance(row).toStringAsFixed(2),
+                )),
+                DataCell(Text(
+                  ((row['credit_limit'] as num?)?.toDouble() ?? 0)
+                      .toStringAsFixed(2),
+                )),
+                DataCell(Text(
+                  (((row['credit_limit'] as num?)?.toDouble() ?? 0) -
+                          PersonalFinanceStore.displayBalance(row))
+                      .clamp(0, double.infinity)
+                      .toStringAsFixed(2),
+                )),
+                DataCell(Text(
+                  ((row['payment_due_day'] as num?)?.toInt() ?? 0) > 0
+                      ? 'Día ${row['payment_due_day']}'
+                      : '—',
+                )),
+                DataCell(
+                  Icon(
+                    row['reminder_enabled'] == 1
+                        ? Icons.notifications_active_outlined
+                        : Icons.notifications_off_outlined,
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final savings =
+        rows.where((e) => e['account_kind'] == 'savings').toList();
+    final banks = rows
+        .where(
+          (e) =>
+              e['account_kind'] == 'checking' || e['account_kind'] == 'cash',
+        )
+        .toList();
+    final cards =
+        rows.where((e) => e['account_kind'] == 'credit_card').toList();
+    final totalSavings = savings.fold<double>(
+      0,
+      (sum, row) => sum + PersonalFinanceStore.displayBalance(row),
+    );
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Cuentas, ahorros y tarjetas')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openEditor(),
+        icon: const Icon(Icons.add),
+        label: const Text('Nueva cuenta'),
+      ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 96),
+              children: [
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.savings_outlined),
+                    title: const Text('Ahorros totales'),
+                    trailing: Text(
+                      totalSavings.toStringAsFixed(2),
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+                _sectionTitle('Ahorros'),
+                if (savings.isEmpty)
+                  const Text('No hay cuentas de ahorro registradas.')
+                else
+                  _savingsTable(savings),
+                _sectionTitle('Cuentas bancarias y efectivo'),
+                if (banks.isEmpty)
+                  const Text('No hay cuentas bancarias registradas.')
+                else
+                  _bankTable(banks),
+                _sectionTitle('Tarjetas de crédito'),
+                if (cards.isEmpty)
+                  const Text('No hay tarjetas de crédito registradas.')
+                else
+                  _creditTable(cards),
+                const SizedBox(height: 20),
+                const Text(
+                  'Toca una cuenta o tarjeta para editar banco, nombre, límite o recordatorio.',
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class PersonalFinancialAccountEditorPage extends StatefulWidget {
+  final Map<String, dynamic>? existing;
+  const PersonalFinancialAccountEditorPage({super.key, this.existing});
+
+  @override
+  State<PersonalFinancialAccountEditorPage> createState() =>
+      _PersonalFinancialAccountEditorPageState();
+}
+
+class _PersonalFinancialAccountEditorPageState
+    extends State<PersonalFinancialAccountEditorPage> {
+  late final TextEditingController nameController;
+  late final TextEditingController bankController;
+  final initialController = TextEditingController();
+  late final TextEditingController limitController;
+
+  late String kind;
+  late int dueDay;
+  late bool reminderEnabled;
+  late int reminderDaysBefore;
+  bool saving = false;
+
+  bool get editing => widget.existing != null;
+  bool get isCard => kind == 'credit_card';
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    kind = e?['account_kind']?.toString() ?? 'savings';
+    nameController = TextEditingController(text: e?['name']?.toString() ?? '');
+    bankController =
+        TextEditingController(text: e?['bank_name']?.toString() ?? '');
+    limitController = TextEditingController(
+      text: ((e?['credit_limit'] as num?)?.toDouble() ?? 0) > 0
+          ? ((e?['credit_limit'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)
+          : '',
+    );
+    dueDay = (e?['payment_due_day'] as num?)?.toInt() ?? 0;
+    reminderEnabled = e?['reminder_enabled'] == 1;
+    reminderDaysBefore =
+        (e?['reminder_days_before'] as num?)?.toInt() ?? 1;
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    bankController.dispose();
+    initialController.dispose();
+    limitController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final initial =
+        double.tryParse(initialController.text.trim().replaceAll(',', '.')) ??
+            0;
+    final limit =
+        double.tryParse(limitController.text.trim().replaceAll(',', '.')) ?? 0;
+
+    if (nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escribe un nombre para la cuenta.')),
+      );
+      return;
+    }
+    if (initial < 0 || limit < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Los importes no pueden ser negativos.')),
+      );
+      return;
+    }
+    if (isCard && dueDay != 0 && (dueDay < 1 || dueDay > 31)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El día de pago debe estar entre 1 y 31.')),
+      );
+      return;
+    }
+
+    var effectiveReminder = reminderEnabled;
+    if (isCard && reminderEnabled) {
+      if (dueDay == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Selecciona el día de pago antes de activar la alarma.'),
+          ),
+        );
+        return;
+      }
+      final granted = await PersonalReminderBridge.requestPermission();
+      if (!granted) {
+        effectiveReminder = false;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'No se concedió permiso de notificaciones. Guardaré la tarjeta sin alarma.',
+              ),
+            ),
+          );
+        }
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => saving = true);
+    try {
+      if (editing) {
+        await PersonalFinanceStore.updateFinancialAccount(
+          id: widget.existing!['id'] as int,
+          name: nameController.text,
+          bankName: bankController.text,
+          kind: kind,
+          creditLimit: limit,
+          paymentDueDay: dueDay,
+          reminderEnabled: effectiveReminder,
+          reminderDaysBefore: reminderDaysBefore,
+        );
+      } else {
+        await PersonalFinanceStore.createFinancialAccount(
+          name: nameController.text,
+          bankName: bankController.text,
+          kind: kind,
+          creditLimit: limit,
+          initialBalance: initial,
+          paymentDueDay: dueDay,
+          reminderEnabled: effectiveReminder,
+          reminderDaysBefore: reminderDaysBefore,
+        );
+      }
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No pude guardar la cuenta: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(editing ? 'Editar cuenta personal' : 'Nueva cuenta personal'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: kind,
+            decoration: const InputDecoration(
+              labelText: 'Tipo',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'savings',
+                child: Text('Cuenta de ahorro'),
+              ),
+              DropdownMenuItem(
+                value: 'checking',
+                child: Text('Cuenta bancaria / corriente'),
+              ),
+              DropdownMenuItem(
+                value: 'credit_card',
+                child: Text('Tarjeta de crédito'),
+              ),
+              DropdownMenuItem(
+                value: 'cash',
+                child: Text('Efectivo'),
+              ),
+            ],
+            onChanged: editing || saving
+                ? null
+                : (v) {
+                    if (v != null) setState(() => kind = v);
+                  },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: bankController,
+            decoration: const InputDecoration(
+              labelText: 'Banco',
+              hintText: 'Ej.: Chase, Bank of America, Wells Fargo',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: nameController,
+            decoration: InputDecoration(
+              labelText: isCard ? 'Nombre de la tarjeta' : 'Nombre de la cuenta',
+              hintText: isCard ? 'Ej.: Freedom Unlimited' : 'Ej.: Fondo de emergencia',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          if (!editing) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: initialController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText:
+                    isCard ? 'Deuda actual inicial' : 'Saldo actual inicial',
+                prefixText: '\$ ',
+                helperText:
+                    'Sirve para cargar tu situación actual sin registrarla como ingreso nuevo.',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+          if (isCard) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: limitController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Límite de crédito',
+                prefixText: '\$ ',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              initialValue: dueDay,
+              decoration: const InputDecoration(
+                labelText: 'Día de pago / vencimiento',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                const DropdownMenuItem(value: 0, child: Text('Sin fecha')),
+                for (var day = 1; day <= 31; day++)
+                  DropdownMenuItem(value: day, child: Text('Día $day')),
+              ],
+              onChanged: saving
+                  ? null
+                  : (v) {
+                      if (v != null) setState(() => dueDay = v);
+                    },
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Programar alarma de pago'),
+              subtitle: const Text(
+                'La notificación se programa localmente en este teléfono.',
+              ),
+              value: reminderEnabled,
+              onChanged: saving
+                  ? null
+                  : (v) => setState(() => reminderEnabled = v),
+            ),
+            if (reminderEnabled)
+              DropdownButtonFormField<int>(
+                initialValue: reminderDaysBefore,
+                decoration: const InputDecoration(
+                  labelText: 'Avisarme',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 0, child: Text('El mismo día')),
+                  DropdownMenuItem(value: 1, child: Text('1 día antes')),
+                  DropdownMenuItem(value: 3, child: Text('3 días antes')),
+                  DropdownMenuItem(value: 7, child: Text('7 días antes')),
+                ],
+                onChanged: saving
+                    ? null
+                    : (v) {
+                        if (v != null) {
+                          setState(() => reminderDaysBefore = v);
+                        }
+                      },
+              ),
+          ],
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: saving ? null : _save,
+            icon: saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined),
+            label: Text(saving ? 'Guardando…' : 'Guardar cuenta'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PersonalBalanceSheetPage extends StatefulWidget {
+  const PersonalBalanceSheetPage({super.key});
+
+  @override
+  State<PersonalBalanceSheetPage> createState() =>
+      _PersonalBalanceSheetPageState();
+}
+
+class _PersonalBalanceSheetPageState extends State<PersonalBalanceSheetPage> {
+  bool loading = true;
+  List<Map<String, dynamic>> rows = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final data = await PersonalFinanceStore.accountBalances();
+    if (!mounted) return;
+    setState(() {
+      rows = data;
+      loading = false;
+    });
+  }
+
+  double _balance(Map<String, dynamic> row) {
+    final net = (row['net'] as num?)?.toDouble() ?? 0;
+    return row['type'] == 'liability' ? -net : net;
+  }
+
+  Widget _section(
+    String title,
+    List<Map<String, dynamic>> data,
+    double total,
+  ) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                Text(
+                  total.toStringAsFixed(2),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+            const Divider(),
+            for (final row in data)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(row['name'].toString()),
+                subtitle:
+                    (row['bank_name']?.toString().trim().isNotEmpty ?? false)
+                        ? Text(row['bank_name'].toString())
+                        : Text(row['code'].toString()),
+                trailing: Text(_balance(row).toStringAsFixed(2)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final assets = rows
+        .where((r) => r['type'] == 'asset' && _balance(r).abs() >= 0.005)
+        .toList();
+    final liabilities = rows
+        .where(
+          (r) => r['type'] == 'liability' && _balance(r).abs() >= 0.005,
+        )
+        .toList();
+    final totalAssets =
+        assets.fold<double>(0, (sum, row) => sum + _balance(row));
+    final totalLiabilities =
+        liabilities.fold<double>(0, (sum, row) => sum + _balance(row));
+    final netWorth = totalAssets - totalLiabilities;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Balance General personal')),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.all(14),
+                children: [
+                  _section('ACTIVOS', assets, totalAssets),
+                  _section('PASIVOS', liabilities, totalLiabilities),
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.balance_outlined),
+                      title: const Text(
+                        'PATRIMONIO NETO PERSONAL',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: const Text('Activos − Pasivos'),
+                      trailing: Text(
+                        netWorth.toStringAsFixed(2),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
 class PersonalMovementEditorPage extends StatefulWidget {
   const PersonalMovementEditorPage({super.key});
 
@@ -337,6 +1363,8 @@ class _PersonalMovementEditorPageState
   final amountController = TextEditingController();
   final descriptionController = TextEditingController();
 
+  List<Map<String, dynamic>> accountRows = const [];
+  bool loadingAccounts = true;
   String kind = 'expense';
   String debtMode = 'new';
   String debitCode = 'P5010';
@@ -352,21 +1380,21 @@ class _PersonalMovementEditorPageState
     'manual': 'Asiento manual',
   };
 
-  static const assetCodes = ['P1010', 'P1020', 'P1030', 'P1040', 'P1050'];
-  static const liquidCodes = ['P1010', 'P1020', 'P1030'];
-  static const liabilityCodes = ['P2010', 'P2020'];
-  static const revenueCodes = ['P4010', 'P4020', 'P4030'];
-  static const expenseCodes = [
-    'P5010',
-    'P5020',
-    'P5030',
-    'P5040',
-    'P5050',
-    'P5060',
-    'P5070',
-    'P5080',
-    'P5090',
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadAccounts();
+  }
+
+  Future<void> _loadAccounts() async {
+    final rows = await PersonalFinanceStore.allAccounts();
+    if (!mounted) return;
+    setState(() {
+      accountRows = rows;
+      loadingAccounts = false;
+    });
+    _resetAccounts();
+  }
 
   @override
   void dispose() {
@@ -376,26 +1404,54 @@ class _PersonalMovementEditorPageState
   }
 
   String _accountName(String code) {
+    for (final row in accountRows) {
+      if (row['code'] == code) return row['name'].toString();
+    }
     for (final row in PersonalFinanceStore.accounts) {
       if (row[0] == code) return row[1];
     }
     return code;
   }
 
+  List<String> _codesWhere(bool Function(Map<String, dynamic>) test) =>
+      accountRows.where(test).map((e) => e['code'].toString()).toList();
+
   List<String> _allCodes() =>
-      PersonalFinanceStore.accounts.map((e) => e[0]).toList();
+      accountRows.map((e) => e['code'].toString()).toList();
+
+  List<String> _liquidCodes() => _codesWhere(
+        (r) => const {'cash', 'checking', 'savings'}
+            .contains(r['account_kind']?.toString()),
+      );
+
+  List<String> _liabilityCodes() => _codesWhere(
+        (r) => r['type'] == 'liability',
+      );
+
+  List<String> _expenseCodes() => _codesWhere(
+        (r) => r['type'] == 'expense',
+      );
+
+  List<String> _revenueCodes() => _codesWhere(
+        (r) => r['type'] == 'revenue',
+      );
+
+  List<String> _assetCodes() => _codesWhere(
+        (r) => r['type'] == 'asset',
+      );
 
   List<String> _debitOptions() {
     switch (kind) {
       case 'expense':
-        return expenseCodes;
+        return _expenseCodes();
       case 'income':
-        return liquidCodes;
+        return _liquidCodes();
       case 'transfer':
-        return liquidCodes;
+        return _liquidCodes();
       case 'debt':
-        if (debtMode == 'pay') return liabilityCodes;
-        return [...expenseCodes, ...assetCodes];
+        return debtMode == 'pay'
+            ? _liabilityCodes()
+            : [..._expenseCodes(), ..._assetCodes()];
       default:
         return _allCodes();
     }
@@ -404,46 +1460,51 @@ class _PersonalMovementEditorPageState
   List<String> _creditOptions() {
     switch (kind) {
       case 'expense':
-        return [...liquidCodes, ...liabilityCodes];
+        return [..._liquidCodes(), ..._liabilityCodes()];
       case 'income':
-        return revenueCodes;
+        return _revenueCodes();
       case 'transfer':
-        return liquidCodes;
+        return _liquidCodes();
       case 'debt':
-        if (debtMode == 'pay') return liquidCodes;
-        return liabilityCodes;
+        return debtMode == 'pay' ? _liquidCodes() : _liabilityCodes();
       default:
         return _allCodes();
     }
   }
 
+  String _firstOr(List<String> values, String fallback) =>
+      values.isEmpty ? fallback : values.first;
+
   void _resetAccounts() {
+    if (accountRows.isEmpty) return;
     switch (kind) {
       case 'expense':
-        debitCode = 'P5010';
-        creditCode = 'P1010';
+        debitCode = _firstOr(_expenseCodes(), 'P5010');
+        creditCode = _firstOr(_liquidCodes(), 'P1010');
         break;
       case 'income':
-        debitCode = 'P1020';
-        creditCode = 'P4010';
+        debitCode = _firstOr(_liquidCodes(), 'P1020');
+        creditCode = _firstOr(_revenueCodes(), 'P4010');
         break;
       case 'transfer':
-        debitCode = 'P1020';
-        creditCode = 'P1010';
+        final liquids = _liquidCodes();
+        debitCode = _firstOr(liquids, 'P1020');
+        creditCode = liquids.length > 1 ? liquids[1] : 'P1010';
         break;
       case 'debt':
         if (debtMode == 'pay') {
-          debitCode = 'P2020';
-          creditCode = 'P1020';
+          debitCode = _firstOr(_liabilityCodes(), 'P2020');
+          creditCode = _firstOr(_liquidCodes(), 'P1020');
         } else {
-          debitCode = 'P5040';
-          creditCode = 'P2020';
+          debitCode = _firstOr(_expenseCodes(), 'P5040');
+          creditCode = _firstOr(_liabilityCodes(), 'P2020');
         }
         break;
       default:
         debitCode = 'P1010';
         creditCode = 'P3010';
     }
+    if (mounted) setState(() {});
   }
 
   String _debitLabel() {
@@ -485,7 +1546,9 @@ class _PersonalMovementEditorPageState
       case 'transfer':
         return 'Transferencia entre cuentas personales';
       case 'debt':
-        return debtMode == 'pay' ? 'Pago de deuda personal' : 'Nueva deuda personal';
+        return debtMode == 'pay'
+            ? 'Pago de deuda personal'
+            : 'Nueva deuda personal';
       default:
         return 'Asiento personal manual';
     }
@@ -532,7 +1595,7 @@ class _PersonalMovementEditorPageState
         debitCode: debitCode,
         creditCode: creditCode,
         reference:
-            'MAN-P-' + DateTime.now().millisecondsSinceEpoch.toString(),
+            'MAN-P-${DateTime.now().millisecondsSinceEpoch}',
         date: date,
       );
       if (!mounted) return;
@@ -541,7 +1604,7 @@ class _PersonalMovementEditorPageState
       if (!mounted) return;
       setState(() => saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No pude guardar el movimiento: ' + e.toString())),
+        SnackBar(content: Text('No pude guardar el movimiento: $e')),
       );
     }
   }
@@ -552,8 +1615,13 @@ class _PersonalMovementEditorPageState
     required List<String> options,
     required ValueChanged<String?> onChanged,
   }) {
+    final safe = options.contains(value)
+        ? value
+        : options.isNotEmpty
+            ? options.first
+            : null;
     return DropdownButtonFormField<String>(
-      initialValue: options.contains(value) ? value : options.first,
+      initialValue: safe,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
@@ -563,25 +1631,33 @@ class _PersonalMovementEditorPageState
         for (final code in options)
           DropdownMenuItem(
             value: code,
-            child: Text(code + ' · ' + _accountName(code)),
+            child: Text('$code · ${_accountName(code)}'),
           ),
       ],
-      onChanged: saving ? null : onChanged,
+      onChanged: saving || options.isEmpty ? null : onChanged,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (loadingAccounts) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final debitOptions = _debitOptions();
     final creditOptions = _creditOptions();
-    if (!debitOptions.contains(debitCode)) debitCode = debitOptions.first;
-    if (!creditOptions.contains(creditCode)) creditCode = creditOptions.first;
+    if (debitOptions.isNotEmpty && !debitOptions.contains(debitCode)) {
+      debitCode = debitOptions.first;
+    }
+    if (creditOptions.isNotEmpty && !creditOptions.contains(creditCode)) {
+      creditCode = creditOptions.first;
+    }
 
-    final dateText = date.year.toString().padLeft(4, '0') +
-        '-' +
-        date.month.toString().padLeft(2, '0') +
-        '-' +
-        date.day.toString().padLeft(2, '0');
+    final dateText = '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
 
     return Scaffold(
       appBar: AppBar(title: const Text('Agregar movimiento personal')),
@@ -630,7 +1706,8 @@ class _PersonalMovementEditorPageState
           const SizedBox(height: 12),
           TextField(
             controller: amountController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Importe',
               prefixText: '\$ ',
@@ -678,14 +1755,8 @@ class _PersonalMovementEditorPageState
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Text(
-                'Vista previa\n\nDEBE  ' +
-                    debitCode +
-                    ' · ' +
-                    _accountName(debitCode) +
-                    '\nHABER  ' +
-                    creditCode +
-                    ' · ' +
-                    _accountName(creditCode),
+                'Vista previa\n\nDEBE  $debitCode · ${_accountName(debitCode)}'
+                '\nHABER  $creditCode · ${_accountName(creditCode)}',
               ),
             ),
           ),
