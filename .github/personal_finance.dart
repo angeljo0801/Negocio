@@ -337,6 +337,9 @@ class PersonalFinanceStore {
     int paymentDueDay = 0,
     bool reminderEnabled = false,
     int reminderDaysBefore = 1,
+    String rewardsType = 'none',
+    double rewardsBalance = 0,
+    double rewardsPercent = 0,
     DateTime? initialDate,
   }) async {
     await ensureSchema();
@@ -345,11 +348,12 @@ class PersonalFinanceStore {
     if (cleanName.isEmpty) {
       throw Exception('Escribe un nombre para la cuenta.');
     }
-    if (!const {'savings', 'checking', 'credit_card'}.contains(kind)) {
+    if (!const {'savings', 'checking', 'credit_card', 'cash'}.contains(kind)) {
       throw Exception('Tipo de cuenta no válido.');
     }
 
     final d = await AppDatabase.instance.db;
+    final bankId = cleanBank.isEmpty ? null : await createBank(cleanBank);
     final code = await _nextCode(kind);
     final type = kind == 'credit_card' ? 'liability' : 'asset';
     final id = await d.insert('personal_accounts', {
@@ -357,6 +361,7 @@ class PersonalFinanceStore {
       'name': cleanName,
       'type': type,
       'bank_name': cleanBank,
+      'bank_id': bankId,
       'account_kind': kind,
       'credit_limit': kind == 'credit_card' ? creditLimit : 0.0,
       'payment_due_day':
@@ -365,6 +370,9 @@ class PersonalFinanceStore {
           kind == 'credit_card' && reminderEnabled ? 1 : 0,
       'reminder_days_before':
           kind == 'credit_card' ? reminderDaysBefore.clamp(0, 30) : 1,
+      'rewards_type': kind == 'credit_card' ? rewardsType : 'none',
+      'rewards_balance': kind == 'credit_card' ? rewardsBalance : 0.0,
+      'rewards_percent': kind == 'credit_card' ? rewardsPercent : 0.0,
       'is_system': 0,
     });
 
@@ -414,14 +422,20 @@ class PersonalFinanceStore {
     int paymentDueDay = 0,
     bool reminderEnabled = false,
     int reminderDaysBefore = 1,
+    String rewardsType = 'none',
+    double rewardsBalance = 0,
+    double rewardsPercent = 0,
   }) async {
     await ensureSchema();
     final d = await AppDatabase.instance.db;
+    final cleanBank = bankName.trim();
+    final bankId = cleanBank.isEmpty ? null : await createBank(cleanBank);
     await d.update(
       'personal_accounts',
       {
         'name': name.trim(),
-        'bank_name': bankName.trim(),
+        'bank_name': cleanBank,
+        'bank_id': bankId,
         'credit_limit': kind == 'credit_card' ? creditLimit : 0.0,
         'payment_due_day':
             kind == 'credit_card' ? paymentDueDay.clamp(0, 31) : 0,
@@ -429,6 +443,9 @@ class PersonalFinanceStore {
             kind == 'credit_card' && reminderEnabled ? 1 : 0,
         'reminder_days_before':
             kind == 'credit_card' ? reminderDaysBefore.clamp(0, 30) : 1,
+        'rewards_type': kind == 'credit_card' ? rewardsType : 'none',
+        'rewards_balance': kind == 'credit_card' ? rewardsBalance : 0.0,
+        'rewards_percent': kind == 'credit_card' ? rewardsPercent : 0.0,
       },
       where: 'id=?',
       whereArgs: [id],
@@ -449,13 +466,60 @@ class PersonalFinanceStore {
     }
   }
 
+  static Future<void> payCreditCard({
+    required String cardCode,
+    required String sourceCode,
+    required double amount,
+    DateTime? date,
+  }) async {
+    if (amount <= 0) {
+      throw Exception('El pago debe ser mayor que cero.');
+    }
+    final card = await accountByCode(cardCode);
+    final source = await accountByCode(sourceCode);
+    if (card == null || card['account_kind'] != 'credit_card') {
+      throw Exception('La tarjeta seleccionada no existe.');
+    }
+    if (source == null ||
+        !const {'cash', 'checking', 'savings'}
+            .contains(source['account_kind']?.toString())) {
+      throw Exception('Selecciona una cuenta personal válida para pagar.');
+    }
+    final summaries = await accountSummaries();
+    Map<String, dynamic>? current;
+    for (final row in summaries) {
+      if (row['code'] == cardCode) {
+        current = row;
+        break;
+      }
+    }
+    final debt = current == null ? 0.0 : displayBalance(current);
+    if (amount > debt + 0.005) {
+      throw Exception(
+        'El pago no puede ser mayor que la deuda actual (' +
+            debt.toStringAsFixed(2) +
+            ').',
+      );
+    }
+    await addTransaction(
+      description: 'Pago parcial · ' + card['name'].toString(),
+      amount: amount,
+      debitCode: cardCode,
+      creditCode: sourceCode,
+      reference: 'PAY-CC-' + DateTime.now().millisecondsSinceEpoch.toString(),
+      date: date,
+    );
+  }
+
   static Future<List<Map<String, dynamic>>> accountSummaries() async {
     await ensureSchema();
     final d = await AppDatabase.instance.db;
     return d.rawQuery('''
       SELECT
-        a.id,a.code,a.name,a.type,a.bank_name,a.account_kind,a.credit_limit,
-        a.payment_due_day,a.reminder_enabled,a.reminder_days_before,a.is_system,
+        a.id,a.code,a.name,a.type,a.bank_name,a.bank_id,a.account_kind,
+        a.credit_limit,a.payment_due_day,a.reminder_enabled,
+        a.reminder_days_before,a.rewards_type,a.rewards_balance,
+        a.rewards_percent,a.is_system,
         COALESCE(SUM(l.debit),0) AS debit_total,
         COALESCE(SUM(l.credit),0) AS credit_total,
         MAX(t.date) AS last_date
@@ -493,11 +557,24 @@ class PersonalFinanceStore {
       final bank = row['bank_name']?.toString().trim() ?? '';
       final kind = row['account_kind']?.toString() ?? '';
       final display = row['type'] == 'liability' ? -net : net;
-      b.writeln(
+      final rewardsType = row['rewards_type']?.toString() ?? 'none';
+      final rewardsBalance =
+          (row['rewards_balance'] as num?)?.toDouble() ?? 0;
+      final rewardsPercent =
+          (row['rewards_percent'] as num?)?.toDouble() ?? 0;
+      b.write(
         '- ${row['code']} · ${row['name']}'
         '${bank.isEmpty ? '' : ' · banco $bank'}'
         ' · $kind: ${display.toStringAsFixed(2)}',
       );
+      if (kind == 'credit_card') {
+        b.write(
+          ' · rewards $rewardsType'
+          ' · ${rewardsPercent.toStringAsFixed(2)}%'
+          ' · saldo rewards ${rewardsBalance.toStringAsFixed(2)}',
+        );
+      }
+      b.writeln();
     }
     b.writeln('TRANSACCIONES PERSONALES RECIENTES:');
     for (final tx in recentRows.take(8)) {
@@ -510,9 +587,10 @@ class PersonalFinanceStore {
     await ensureSchema();
     final d = await AppDatabase.instance.db;
     return d.rawQuery('''
-      SELECT a.id,a.code,a.name,a.type,a.bank_name,a.account_kind,
+      SELECT a.id,a.code,a.name,a.type,a.bank_name,a.bank_id,a.account_kind,
         a.credit_limit,a.payment_due_day,a.reminder_enabled,
-        a.reminder_days_before,a.is_system,
+        a.reminder_days_before,a.rewards_type,a.rewards_balance,
+        a.rewards_percent,a.is_system,
         COALESCE(SUM(l.debit-l.credit),0) AS net
       FROM personal_accounts a
       LEFT JOIN personal_journal_lines l ON l.account_id=a.id
