@@ -115,6 +115,10 @@ class PersonalFinanceStore {
         payment_due_day INTEGER NOT NULL DEFAULT 0,
         reminder_enabled INTEGER NOT NULL DEFAULT 0,
         reminder_days_before INTEGER NOT NULL DEFAULT 1,
+        rewards_type TEXT NOT NULL DEFAULT 'none',
+        rewards_balance REAL NOT NULL DEFAULT 0,
+        rewards_percent REAL NOT NULL DEFAULT 0,
+        bank_id INTEGER,
         is_system INTEGER NOT NULL DEFAULT 1
       )
     ''');
@@ -132,7 +136,19 @@ class PersonalFinanceStore {
       'reminder_days_before',
       'INTEGER NOT NULL DEFAULT 1',
     );
+    await _ensureColumn(d, 'rewards_type', "TEXT NOT NULL DEFAULT 'none'");
+    await _ensureColumn(d, 'rewards_balance', 'REAL NOT NULL DEFAULT 0');
+    await _ensureColumn(d, 'rewards_percent', 'REAL NOT NULL DEFAULT 0');
+    await _ensureColumn(d, 'bank_id', 'INTEGER');
     await _ensureColumn(d, 'is_system', 'INTEGER NOT NULL DEFAULT 1');
+
+    await d.execute('''
+      CREATE TABLE IF NOT EXISTS personal_banks(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      )
+    ''');
 
     await d.execute('''
       CREATE TABLE IF NOT EXISTS personal_transactions(
@@ -169,6 +185,65 @@ class PersonalFinanceStore {
         whereArgs: [entry.key],
       );
     }
+
+    final namedBanks = await d.rawQuery('''
+      SELECT DISTINCT bank_name FROM personal_accounts
+      WHERE TRIM(COALESCE(bank_name,'')) <> ''
+    ''');
+    for (final row in namedBanks) {
+      final name = row['bank_name']?.toString().trim() ?? '';
+      if (name.isEmpty) continue;
+      await d.rawInsert(
+        'INSERT OR IGNORE INTO personal_banks(name,created_at) VALUES(?,?)',
+        [name, DateTime.now().toIso8601String()],
+      );
+      final bankRows = await d.query(
+        'personal_banks',
+        columns: ['id'],
+        where: 'name=?',
+        whereArgs: [name],
+        limit: 1,
+      );
+      if (bankRows.isNotEmpty) {
+        await d.update(
+          'personal_accounts',
+          {'bank_id': bankRows.first['id']},
+          where: "bank_name=? AND bank_id IS NULL",
+          whereArgs: [name],
+        );
+      }
+    }
+  }
+
+  static Future<int?> createBank(String name) async {
+    await ensureSchema();
+    final clean = name.trim();
+    if (clean.isEmpty) throw Exception('Escribe el nombre del banco.');
+    final d = await AppDatabase.instance.db;
+    await d.rawInsert(
+      'INSERT OR IGNORE INTO personal_banks(name,created_at) VALUES(?,?)',
+      [clean, DateTime.now().toIso8601String()],
+    );
+    final rows = await d.query(
+      'personal_banks',
+      columns: ['id'],
+      where: 'name=?',
+      whereArgs: [clean],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['id'] as int?;
+  }
+
+  static Future<List<Map<String, dynamic>>> banks() async {
+    await ensureSchema();
+    final d = await AppDatabase.instance.db;
+    return d.rawQuery('''
+      SELECT b.id,b.name,b.created_at,COUNT(a.id) AS account_count
+      FROM personal_banks b
+      LEFT JOIN personal_accounts a ON a.bank_id=b.id
+      GROUP BY b.id
+      ORDER BY LOWER(b.name)
+    ''');
   }
 
   static Future<List<Map<String, dynamic>>> allAccounts() async {
