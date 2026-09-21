@@ -948,7 +948,7 @@ $original
       builder: (_) => AlertDialog(
         title: const Text('Confirmar asiento'),
         content: Text(
-          'Ámbito: ${proposal.scope == 'personal' ? 'Personal' : 'Negocio'}\n${proposal.description}\n\nDebe: ${proposal.debitCode} · ${proposal.debitName}  \${proposal.amount.toStringAsFixed(2)}\n'
+          'Ámbito: ${proposal.scope == 'personal' ? 'Personal' : 'Negocio'}\n${proposal.description}\n\nDebe: ${proposal.debitCode} · ${proposal.debitName}  \$${proposal.amount.toStringAsFixed(2)}\n'
           'Haber: ${proposal.creditCode} · ${proposal.creditName}  \$${proposal.amount.toStringAsFixed(2)}\n\n'
           'El bot no guardará nada hasta que confirmes.',
         ),
@@ -1068,7 +1068,7 @@ $original
           ),
           const SizedBox(width: 8),
           Text(
-            '\${amount.toStringAsFixed(2)}',
+            '\$${amount.toStringAsFixed(2)}',
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
         ],
@@ -1115,7 +1115,7 @@ $original
           Text(proposal.description),
           const SizedBox(height: 6),
           Text(
-            'Importe: \${proposal.amount.toStringAsFixed(2)}',
+            'Importe: \$${proposal.amount.toStringAsFixed(2)}',
             style: const TextStyle(fontWeight: FontWeight.w700),
           ),
           const Divider(height: 20),
