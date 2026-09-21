@@ -163,11 +163,11 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
   }
 
   Future<void> _refreshBackgroundState() async {
-    if (busy) return;
     final p = await SharedPreferences.getInstance();
     final storedBusy = p.getBool(_assistantBusyKey) ?? false;
-    if (!storedBusy) return;
-    await _loadAssistantMessages();
+    if (storedBusy || busy) {
+      await _loadAssistantMessages();
+    }
   }
 
   String _conversationContext() {
