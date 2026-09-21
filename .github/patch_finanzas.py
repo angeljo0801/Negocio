@@ -78,7 +78,7 @@ main.write_text(s)
 # Dependencies for the Memora-style AI selector/chat and phone GGUF.
 pub=root/'pubspec.yaml'
 ps=pub.read_text()
-ps=re.sub(r'^version:.*$', 'version: 2.5.2+18', ps, flags=re.M)
+ps=re.sub(r'^version:.*$', 'version: 2.5.3+19', ps, flags=re.M)
 anchor='  file_picker: ^10.3.3'
 if anchor not in ps:
     raise SystemExit('No se encontro file_picker en pubspec')
@@ -103,6 +103,10 @@ if perm not in m:
 manager_perm='com.angelapps.local_ai_manager.permission.USE_AI'
 if manager_perm not in m:
     m=m.replace(manifest_open,manifest_open+'\n    <uses-permission android:name="'+manager_perm+'" />',1)
+if 'android.permission.POST_NOTIFICATIONS' not in m:
+    m=m.replace(manifest_open,manifest_open+'\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',1)
+if 'android.permission.RECEIVE_BOOT_COMPLETED' not in m:
+    m=m.replace(manifest_open,manifest_open+'\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',1)
 if 'android:usesCleartextTraffic' not in m:
     m=m.replace('<application','<application android:usesCleartextTraffic="true"',1)
 if 'com.angelapps.paqueteria.finance_sync' not in m:
@@ -110,6 +114,22 @@ if 'com.angelapps.paqueteria.finance_sync' not in m:
     m=m.replace('    <application',q+'    <application',1)
 elif 'com.angelapps.local_ai_manager' not in m:
     m=m.replace('</queries>','        <package android:name="com.angelapps.local_ai_manager" />\n    </queries>',1)
+
+if 'CardPaymentReminderReceiver' not in m:
+    receiver='''        <receiver
+            android:name=".CardPaymentReminderReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".ReminderBootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+'''
+    m=m.replace('</application>',receiver+'    </application>',1)
 manifest.write_text(m)
 
 
