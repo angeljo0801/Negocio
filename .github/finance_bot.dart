@@ -3,10 +3,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'database.dart';
 import 'finance_ai_service.dart';
 import 'finance_knowledge.dart';
+import 'finance_learning.dart';
+import 'personal_finance.dart';
 import 'models.dart';
 
 class FinanceAssistantPage extends StatefulWidget {
@@ -27,22 +30,36 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
     ),
   ];
   bool busy = false;
+  Timer? _backgroundRefresh;
+  static bool _globalCancelRequested = false;
+
+  static const _assistantHistoryKey = 'finance_assistant_history_v2';
+  static const _assistantBusyKey = 'finance_assistant_busy_v2';
 
   @override
   void initState() {
     super.initState();
     _ensureExtraAccounts();
+    _loadAssistantMessages();
+    _backgroundRefresh = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _refreshBackgroundState(),
+    );
   }
 
   @override
   void dispose() {
-    unawaited(FinanceAiService.releaseConfiguredLocalModel());
+    // Keep AI work alive when leaving this screen. The configured model is
+    // released by the manager/idle policy instead of navigation.
+    _backgroundRefresh?.cancel();
     input.dispose();
     scroll.dispose();
     super.dispose();
   }
 
   Future<void> _ensureExtraAccounts() async {
+    await PersonalFinanceStore.ensureSchema();
+    await FinanceLearningStore.ensureSchema();
     final d = await AppDatabase.instance.db;
     const rows = [
       ['4030', 'Ingresos por envíos y servicios', 'revenue', 'sales'],
@@ -89,7 +106,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
       columns: ['code', 'name', 'type', 'subtype'],
       orderBy: 'code ASC',
     );
-    return rows
+    final business = rows
         .map(
           (r) =>
               r['code'].toString() +
@@ -98,9 +115,59 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
               '|' +
               r['type'].toString() +
               '|' +
-              (r['subtype'] == null ? '' : r['subtype'].toString()),
+              (r['subtype'] == null ? '' : r['subtype'].toString()) +
+              '|business',
         )
         .join('\n');
+    final personal = await PersonalFinanceStore.catalogText();
+    return 'CUENTAS NEGOCIO:\n$business\n\nCUENTAS PERSONALES:\n$personal';
+  }
+
+  Future<void> _loadAssistantMessages() async {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(_assistantHistoryKey);
+    final storedBusy = p.getBool(_assistantBusyKey) ?? false;
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          final loaded = decoded
+              .whereType<Map>()
+              .map((e) => _BotMessage.fromJson(Map<String, dynamic>.from(e)))
+              .toList();
+          if (loaded.isNotEmpty) {
+            messages
+              ..clear()
+              ..addAll(loaded);
+          }
+        }
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() => busy = storedBusy);
+      _scrollDown();
+    } else {
+      busy = storedBusy;
+    }
+  }
+
+  Future<void> _saveAssistantMessages({bool? isBusy}) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(
+      _assistantHistoryKey,
+      jsonEncode(messages.map((e) => e.toJson()).toList()),
+    );
+    if (isBusy != null) {
+      await p.setBool(_assistantBusyKey, isBusy);
+    }
+  }
+
+  Future<void> _refreshBackgroundState() async {
+    if (busy) return;
+    final p = await SharedPreferences.getInstance();
+    final storedBusy = p.getBool(_assistantBusyKey) ?? false;
+    if (!storedBusy) return;
+    await _loadAssistantMessages();
   }
 
   String _conversationContext() {
@@ -158,9 +225,15 @@ REGLAS OBLIGATORIAS:
 - Si la consulta solo pide explicación o consejo, usa action "answer".
 - No guardes nada.
 - Tu salida será la decisión FINAL que verá el usuario.
+- Finanzas Definitiva tiene dos ámbitos separados: Personal y Negocio.
+- Paquetería pertenece únicamente a Negocio y nunca se registra automáticamente en Personal.
+- Si algo es personal y no está claro si se pagó con dinero personal o del negocio, usa clarify.
+- Usa códigos Pxxxx solo para Personal y códigos numéricos normales para Negocio.
+- Si la operación afecta ambos ámbitos, valida también linkedScope y su segunda pareja de cuentas.
+- learnRule solo puede contener una regla GENERAL reutilizable, sin nombres, importes, fechas ni datos privados.
 
 Devuelve SOLO JSON válido:
-{"reply":"texto breve y claro","action":"proposal|clarify|answer","description":"","amount":0,"debitCode":"","creditCode":"","cashClass":"operating|investing|financing|noncash"}
+{"reply":"texto breve y claro","action":"proposal|clarify|answer","scope":"business|personal|unknown","description":"","amount":0,"debitCode":"","creditCode":"","cashClass":"operating|investing|financing|noncash","linkedScope":"none|business|personal","linkedDescription":"","linkedDebitCode":"","linkedCreditCode":"","learnRule":"","learnTags":"","learnScope":"business|personal|both"}
 
 CONOCIMIENTO LOCAL RECUPERADO:
 $knowledge
@@ -203,13 +276,37 @@ ${jsonEncode(draft)}
     return allowed.contains(candidate) ? candidate : 'operating';
   }
 
+  Future<String?> _accountName(String scope, String code) async {
+    if (scope == 'personal') {
+      final row = await PersonalFinanceStore.accountByCode(code);
+      return row?['name']?.toString();
+    }
+    final d = await AppDatabase.instance.db;
+    final rows = await d.query(
+      'accounts',
+      columns: ['name'],
+      where: 'code=?',
+      whereArgs: [code],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['name']?.toString();
+  }
+
   Future<_BotReply> _answerWithAi(String original) async {
     final catalog = await _accountCatalog();
     final history = _conversationContext();
-    final knowledge = FinanceKnowledge.retrieve(
+    final baseKnowledge = FinanceKnowledge.retrieve(
       '$original\n$history',
       topK: 6,
     );
+    final learnedKnowledge = await FinanceLearningStore.retrieve(
+      '$original\n$history',
+      topK: 4,
+    );
+    final knowledge = [
+      baseKnowledge,
+      if (learnedKnowledge.isNotEmpty) learnedKnowledge,
+    ].join('\n\n');
 
     final prompt = '''
 Eres el intérprete inteligente del Asistente financiero de Finanzas Definitiva.
@@ -223,12 +320,18 @@ REGLAS CRÍTICAS:
 - Usa action "proposal" únicamente con importe válido, una cuenta Debe y una Haber justificadas por el mensaje.
 - Usa solo códigos del catálogo. No inviertas quién debe a quién.
 - Si la operación requiere más de dos líneas, explícalo y no fuerces un asiento incorrecto.
+- Finanzas Definitiva tiene dos ámbitos separados: Personal y Negocio.
+- Paquetería pertenece SIEMPRE a Negocio; nunca la pases automáticamente a Personal.
+- Si el usuario confirma que una compra es personal pero no dice si salió de dinero personal o del negocio, pregunta la fuente de fondos.
+- Usa códigos Pxxxx solo para Personal y códigos numéricos normales para Negocio.
+- Si una operación afecta ambos ámbitos, usa linkedScope y una segunda pareja de cuentas.
+- Puedes proponer learnRule solo si descubriste una regla GENERAL reutilizable; nunca incluyas nombres, importes, fechas ni datos privados.
 
 CONOCIMIENTO LOCAL RECUPERADO POR EMBEDDINGS:
 $knowledge
 
 Devuelve SOLO un objeto JSON válido, sin texto extra, con esta forma:
-{"reply":"texto breve y claro","action":"proposal|clarify|answer","description":"","amount":0,"debitCode":"","creditCode":"","cashClass":"operating|investing|financing|noncash"}
+{"reply":"texto breve y claro","action":"proposal|clarify|answer","scope":"business|personal|unknown","description":"","amount":0,"debitCode":"","creditCode":"","cashClass":"operating|investing|financing|noncash","linkedScope":"none|business|personal","linkedDescription":"","linkedDebitCode":"","linkedCreditCode":"","learnRule":"","learnTags":"","learnScope":"business|personal|both"}
 
 CATÁLOGO DE CUENTAS:
 $catalog
@@ -267,6 +370,15 @@ $original
 
     final reply = (obj['reply'] ?? '').toString().trim();
     final action = (obj['action'] ?? 'answer').toString().trim().toLowerCase();
+    final scope = (obj['scope'] ?? 'unknown').toString().trim().toLowerCase();
+    final learnRule = (obj['learnRule'] ?? '').toString().trim();
+    if (learnRule.isNotEmpty) {
+      await FinanceLearningStore.considerCandidate(
+        text: learnRule,
+        tags: (obj['learnTags'] ?? '').toString(),
+        scope: (obj['learnScope'] ?? 'both').toString(),
+      );
+    }
     final requestText = _norm('$original $history');
     final explicitlyWantsEntry = _has(requestText, [
       'crea el asiento',
@@ -310,30 +422,53 @@ $original
       );
     }
 
-    final d = await AppDatabase.instance.db;
-    final accountRows = await d.query(
-      'accounts',
-      columns: ['code', 'name'],
-      where: 'code IN (?, ?)',
-      whereArgs: [debitCode, creditCode],
-    );
-    final byCode = <String, String>{};
-    for (final row in accountRows) {
-      byCode[row['code'].toString()] = row['name'].toString();
+    if (scope != 'business' && scope != 'personal') {
+      return const _BotReply(
+        'Antes de proponerte el asiento necesito saber si esta operación pertenece a tus finanzas personales o a las del negocio.',
+      );
     }
 
-    final debitName = byCode[debitCode];
-    final creditName = byCode[creditCode];
+    final debitName = await _accountName(scope, debitCode);
+    final creditName = await _accountName(scope, creditCode);
     if (debitName == null || creditName == null) {
       return _BotReply(
         (reply.isEmpty ? 'Entendí la operación.' : reply) +
-            '\n\nNo preparé el asiento porque la IA eligió una cuenta que no existe en tu catálogo. Puedes reformularlo o añadir esa cuenta primero.',
+            '\n\nNo preparé el asiento porque una de las cuentas no existe en el catálogo del ámbito seleccionado.',
       );
+    }
+
+    final linkedScope =
+        (obj['linkedScope'] ?? 'none').toString().trim().toLowerCase();
+    final linkedDebitCode =
+        (obj['linkedDebitCode'] ?? '').toString().trim();
+    final linkedCreditCode =
+        (obj['linkedCreditCode'] ?? '').toString().trim();
+    String linkedDebitName = '';
+    String linkedCreditName = '';
+    if (linkedScope == 'business' || linkedScope == 'personal') {
+      if (linkedScope == scope ||
+          linkedDebitCode.isEmpty ||
+          linkedCreditCode.isEmpty ||
+          linkedDebitCode == linkedCreditCode) {
+        return const _BotReply(
+          'La operación afecta Personal y Negocio, pero necesito aclarar cómo se movió el dinero entre ambos antes de crear los asientos vinculados.',
+        );
+      }
+      linkedDebitName =
+          await _accountName(linkedScope, linkedDebitCode) ?? '';
+      linkedCreditName =
+          await _accountName(linkedScope, linkedCreditCode) ?? '';
+      if (linkedDebitName.isEmpty || linkedCreditName.isEmpty) {
+        return const _BotReply(
+          'La operación afecta Personal y Negocio, pero una de las cuentas vinculadas no existe. Necesito revisar la propuesta.',
+        );
+      }
     }
 
     return _BotReply(
       reply.isEmpty ? 'La propuesta pasó la revisión final de la IA.' : reply,
       proposal: _BotProposal(
+        scope: scope,
         description:
             description.isEmpty ? 'Asiento sugerido por IA' : description,
         amount: amount,
@@ -342,6 +477,13 @@ $original
         creditCode: creditCode,
         creditName: creditName,
         cashClass: _cashClass(obj['cashClass']),
+        linkedScope: linkedScope,
+        linkedDescription:
+            (obj['linkedDescription'] ?? '').toString().trim(),
+        linkedDebitCode: linkedDebitCode,
+        linkedDebitName: linkedDebitName,
+        linkedCreditCode: linkedCreditCode,
+        linkedCreditName: linkedCreditName,
       ),
     );
   }
@@ -349,6 +491,18 @@ $original
   Future<_BotReply> _answer(String original) async {
     final normalized = _norm(original);
     final amount = _amount(original);
+
+    if (_has(normalized, [
+      'quiero agregar conocimiento',
+      'quiero anadir conocimiento',
+      'agregar conocimiento',
+      'anadir conocimiento',
+    ])) {
+      return const _BotReply(
+        'Claro. Puedes agregar una regla o conocimiento a la base financiera y elegir si aplica a Personal, Negocio o Ambos.',
+        knowledgeAction: true,
+      );
+    }
 
     // Deterministic guard for debt direction. A bare statement that the user
     // owes someone does not tell us whether cash was borrowed or whether a
@@ -399,9 +553,38 @@ $original
       );
     }
 
+    final historyNorm = _norm(_conversationContext());
+    final saysPersonal = _has(normalized, [
+      'es personal',
+      'fue personal',
+      'para mi',
+      'para mí',
+      'gasto personal',
+      'compra personal',
+    ]);
+    final sourceKnown = _has('$normalized $historyNorm', [
+      'dinero personal',
+      'efectivo personal',
+      'banco personal',
+      'tarjeta personal',
+      'cuenta personal',
+      'dinero del negocio',
+      'efectivo del negocio',
+      'cuenta del negocio',
+      'tarjeta del negocio',
+    ]);
+    if (saysPersonal && !sourceKnown) {
+      return const _BotReply(
+        'Perfecto, lo trataré como una operación personal. ¿La pagaste con tu dinero personal (efectivo, banco o tarjeta) o con dinero del negocio?',
+      );
+    }
+
     try {
       return await _answerWithAi(original);
     } catch (e) {
+      if (_globalCancelRequested) {
+        return const _BotReply('Respuesta detenida.');
+      }
       final fallback = await _answerRules(original);
       final error = FinanceAiService.userFacingError(e);
       return _BotReply(
@@ -578,6 +761,7 @@ $original
     return _BotReply(
       explanation,
       proposal: _BotProposal(
+        scope: 'business',
         description: description,
         amount: amount,
         debitCode: debitCode,
@@ -593,17 +777,168 @@ $original
     final text = (preset ?? input.text).trim();
     if (text.isEmpty || busy) return;
     input.clear();
-    setState(() {
+    _globalCancelRequested = false;
+    if (mounted) {
+      setState(() {
+        messages.add(_BotMessage(fromUser: true, text: text));
+        busy = true;
+      });
+    } else {
       messages.add(_BotMessage(fromUser: true, text: text));
       busy = true;
-    });
+    }
+    await _saveAssistantMessages(isBusy: true);
+
     final reply = await _answer(text);
-    if (!mounted) return;
-    setState(() {
-      messages.add(_BotMessage(fromUser: false, text: reply.text, proposal: reply.proposal));
-      busy = false;
-    });
-    _scrollDown();
+    final answer = _BotMessage(
+      fromUser: false,
+      text: reply.text,
+      proposal: reply.proposal,
+      knowledgeAction: reply.knowledgeAction,
+    );
+    messages.add(answer);
+    busy = false;
+    await _saveAssistantMessages(isBusy: false);
+    if (mounted) {
+      setState(() {});
+      _scrollDown();
+    }
+  }
+
+  Future<void> _stopGeneration() async {
+    _globalCancelRequested = true;
+    await FinanceAiService.cancelCurrent();
+    busy = false;
+    await _saveAssistantMessages(isBusy: false);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _clearConversation() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Borrar conversación'),
+        content: const Text(
+          'Se borrará el historial de este Asistente financiero.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Borrar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    if (busy) await _stopGeneration();
+    messages
+      ..clear()
+      ..add(const _BotMessage(
+        fromUser: false,
+        text:
+            'Soy tu asistente financiero con IA. Puedo trabajar con tus finanzas personales y las del negocio por separado.',
+      ));
+    await _saveAssistantMessages(isBusy: false);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _showAddKnowledgeDialog() async {
+    final title = TextEditingController();
+    final body = TextEditingController();
+    final tags = TextEditingController();
+    var scope = 'both';
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: const Text('Agregar conocimiento'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: title,
+                  decoration: const InputDecoration(
+                    labelText: 'Título (opcional)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: body,
+                  minLines: 4,
+                  maxLines: 10,
+                  decoration: const InputDecoration(
+                    labelText: 'Regla o conocimiento',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: tags,
+                  decoration: const InputDecoration(
+                    labelText: 'Etiquetas (opcional)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: scope,
+                  decoration: const InputDecoration(labelText: 'Ámbito'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'both',
+                      child: Text('Personal y Negocio'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'personal',
+                      child: Text('Solo Personal'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'business',
+                      child: Text('Solo Negocio'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setDialog(() => scope = v);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved == true && body.text.trim().isNotEmpty) {
+      await FinanceLearningStore.saveManual(
+        title: title.text,
+        text: body.text,
+        tags: tags.text,
+        scope: scope,
+      );
+      messages.add(const _BotMessage(
+        fromUser: false,
+        text:
+            'Conocimiento agregado. Ya forma parte de la base que consulto para futuras respuestas.',
+      ));
+      await _saveAssistantMessages();
+      if (mounted) setState(() {});
+    }
+    title.dispose();
+    body.dispose();
+    tags.dispose();
   }
 
   Future<void> createProposal(_BotProposal proposal) async {
@@ -613,7 +948,7 @@ $original
       builder: (_) => AlertDialog(
         title: const Text('Confirmar asiento'),
         content: Text(
-          '${proposal.description}\n\nDebe: ${proposal.debitCode} · ${proposal.debitName}  \$${proposal.amount.toStringAsFixed(2)}\n'
+          'Ámbito: ${proposal.scope == 'personal' ? 'Personal' : 'Negocio'}\n${proposal.description}\n\nDebe: ${proposal.debitCode} · ${proposal.debitName}  \${proposal.amount.toStringAsFixed(2)}\n'
           'Haber: ${proposal.creditCode} · ${proposal.creditName}  \$${proposal.amount.toStringAsFixed(2)}\n\n'
           'El bot no guardará nada hasta que confirmes.',
         ),
@@ -626,28 +961,73 @@ $original
     if (ok != true) return;
 
     try {
-      final debitId = await AppDatabase.instance.accountId(proposal.debitCode);
-      final creditId = await AppDatabase.instance.accountId(proposal.creditCode);
-      await AppDatabase.instance.addTransaction(
-        JournalTransaction(
-          date: DateTime.now(),
+      final ref = 'BOT-${DateTime.now().millisecondsSinceEpoch}';
+
+      Future<void> addBusiness(
+        String description,
+        String debitCode,
+        String creditCode,
+      ) async {
+        final debitId = await AppDatabase.instance.accountId(debitCode);
+        final creditId = await AppDatabase.instance.accountId(creditCode);
+        await AppDatabase.instance.addTransaction(
+          JournalTransaction(
+            date: DateTime.now(),
+            description: description,
+            reference: ref,
+            cashFlowClass: proposal.cashClass,
+            lines: [
+              JournalLine(accountId: debitId, debit: proposal.amount),
+              JournalLine(accountId: creditId, credit: proposal.amount),
+            ],
+          ),
+        );
+      }
+
+      if (proposal.scope == 'personal') {
+        await PersonalFinanceStore.addTransaction(
           description: proposal.description,
-          reference: 'BOT-${DateTime.now().millisecondsSinceEpoch}',
-          cashFlowClass: proposal.cashClass,
-          lines: [
-            JournalLine(accountId: debitId, debit: proposal.amount),
-            JournalLine(accountId: creditId, credit: proposal.amount),
-          ],
-        ),
-      );
+          amount: proposal.amount,
+          debitCode: proposal.debitCode,
+          creditCode: proposal.creditCode,
+          reference: ref,
+        );
+      } else {
+        await addBusiness(
+          proposal.description,
+          proposal.debitCode,
+          proposal.creditCode,
+        );
+      }
+
+      if (proposal.linkedScope == 'personal') {
+        await PersonalFinanceStore.addTransaction(
+          description: proposal.linkedDescription.isEmpty
+              ? 'Transferencia vinculada con Negocio'
+              : proposal.linkedDescription,
+          amount: proposal.amount,
+          debitCode: proposal.linkedDebitCode,
+          creditCode: proposal.linkedCreditCode,
+          reference: ref,
+        );
+      } else if (proposal.linkedScope == 'business') {
+        await addBusiness(
+          proposal.linkedDescription.isEmpty
+              ? 'Transferencia vinculada con Personal'
+              : proposal.linkedDescription,
+          proposal.linkedDebitCode,
+          proposal.linkedCreditCode,
+        );
+      }
       widget.onChanged();
       if (!mounted) return;
       setState(() {
         messages.add(const _BotMessage(
           fromUser: false,
-          text: 'Asiento creado correctamente. Ya forma parte de tus estados financieros. Si fue un error, puedes moverlo a Papelera desde el Libro diario.',
+          text: 'Asiento creado correctamente en el ámbito correspondiente.',
         ));
       });
+      await _saveAssistantMessages();
       _scrollDown();
     } catch (e) {
       if (!mounted) return;
@@ -724,6 +1104,14 @@ $original
             ],
           ),
           const SizedBox(height: 6),
+          Text(
+            proposal.scope == 'personal' ? 'PERSONAL' : 'NEGOCIO',
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 4),
           Text(proposal.description),
           const SizedBox(height: 6),
           Text(
@@ -744,6 +1132,26 @@ $original
             proposal.creditName,
             proposal.amount,
           ),
+          if (proposal.linkedScope == 'personal' ||
+              proposal.linkedScope == 'business') ...[
+            const Divider(height: 20),
+            Text(
+              'Movimiento vinculado · ${proposal.linkedScope == 'personal' ? 'PERSONAL' : 'NEGOCIO'}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            _entryRow(
+              'DEBE',
+              proposal.linkedDebitCode,
+              proposal.linkedDebitName,
+              proposal.amount,
+            ),
+            _entryRow(
+              'HABER',
+              proposal.linkedCreditCode,
+              proposal.linkedCreditName,
+              proposal.amount,
+            ),
+          ],
           const SizedBox(height: 10),
           FilledButton.icon(
             onPressed: () => createProposal(proposal),
@@ -765,7 +1173,16 @@ $original
       'Un cliente me pagó \$120',
     ];
     return Scaffold(
-      appBar: AppBar(title: const Text('Asistente financiero')),
+      appBar: AppBar(
+        title: const Text('Asistente financiero'),
+        actions: [
+          IconButton(
+            tooltip: 'Borrar conversación',
+            onPressed: _clearConversation,
+            icon: const Icon(Icons.delete_outline),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           SizedBox(
@@ -803,6 +1220,14 @@ $original
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (m.text.trim().isNotEmpty) Text(m.text),
+                        if (m.knowledgeAction) ...[
+                          const SizedBox(height: 10),
+                          FilledButton.icon(
+                            onPressed: _showAddKnowledgeDialog,
+                            icon: const Icon(Icons.library_add_outlined),
+                            label: const Text('Agregar conocimiento a la base'),
+                          ),
+                        ],
                         if (m.proposal != null) _proposalCard(m.proposal!),
                       ],
                     ),
@@ -833,9 +1258,11 @@ $original
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    tooltip: 'Enviar',
-                    onPressed: busy ? null : () => send(),
-                    icon: const Icon(Icons.send),
+                    tooltip: busy ? 'Detener' : 'Enviar',
+                    onPressed: busy ? _stopGeneration : () => send(),
+                    icon: Icon(
+                      busy ? Icons.stop_rounded : Icons.send_rounded,
+                    ),
                   ),
                 ],
               ),
@@ -851,16 +1278,46 @@ class _BotMessage {
   final bool fromUser;
   final String text;
   final _BotProposal? proposal;
-  const _BotMessage({required this.fromUser, required this.text, this.proposal});
+  final bool knowledgeAction;
+  const _BotMessage({
+    required this.fromUser,
+    required this.text,
+    this.proposal,
+    this.knowledgeAction = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'fromUser': fromUser,
+        'text': text,
+        'knowledgeAction': knowledgeAction,
+        'proposal': proposal?.toJson(),
+      };
+
+  factory _BotMessage.fromJson(Map<String, dynamic> json) => _BotMessage(
+        fromUser: json['fromUser'] == true,
+        text: json['text']?.toString() ?? '',
+        knowledgeAction: json['knowledgeAction'] == true,
+        proposal: json['proposal'] is Map
+            ? _BotProposal.fromJson(
+                Map<String, dynamic>.from(json['proposal'] as Map),
+              )
+            : null,
+      );
 }
 
 class _BotReply {
   final String text;
   final _BotProposal? proposal;
-  const _BotReply(this.text, {this.proposal});
+  final bool knowledgeAction;
+  const _BotReply(
+    this.text, {
+    this.proposal,
+    this.knowledgeAction = false,
+  });
 }
 
 class _BotProposal {
+  final String scope;
   final String description;
   final double amount;
   final String debitCode;
@@ -868,7 +1325,15 @@ class _BotProposal {
   final String creditCode;
   final String creditName;
   final String cashClass;
+  final String linkedScope;
+  final String linkedDescription;
+  final String linkedDebitCode;
+  final String linkedDebitName;
+  final String linkedCreditCode;
+  final String linkedCreditName;
+
   const _BotProposal({
+    this.scope = 'business',
     required this.description,
     required this.amount,
     required this.debitCode,
@@ -876,5 +1341,45 @@ class _BotProposal {
     required this.creditCode,
     required this.creditName,
     required this.cashClass,
+    this.linkedScope = 'none',
+    this.linkedDescription = '',
+    this.linkedDebitCode = '',
+    this.linkedDebitName = '',
+    this.linkedCreditCode = '',
+    this.linkedCreditName = '',
   });
+
+  Map<String, dynamic> toJson() => {
+        'scope': scope,
+        'description': description,
+        'amount': amount,
+        'debitCode': debitCode,
+        'debitName': debitName,
+        'creditCode': creditCode,
+        'creditName': creditName,
+        'cashClass': cashClass,
+        'linkedScope': linkedScope,
+        'linkedDescription': linkedDescription,
+        'linkedDebitCode': linkedDebitCode,
+        'linkedDebitName': linkedDebitName,
+        'linkedCreditCode': linkedCreditCode,
+        'linkedCreditName': linkedCreditName,
+      };
+
+  factory _BotProposal.fromJson(Map<String, dynamic> json) => _BotProposal(
+        scope: json['scope']?.toString() ?? 'business',
+        description: json['description']?.toString() ?? '',
+        amount: (json['amount'] as num?)?.toDouble() ?? 0,
+        debitCode: json['debitCode']?.toString() ?? '',
+        debitName: json['debitName']?.toString() ?? '',
+        creditCode: json['creditCode']?.toString() ?? '',
+        creditName: json['creditName']?.toString() ?? '',
+        cashClass: json['cashClass']?.toString() ?? 'operating',
+        linkedScope: json['linkedScope']?.toString() ?? 'none',
+        linkedDescription: json['linkedDescription']?.toString() ?? '',
+        linkedDebitCode: json['linkedDebitCode']?.toString() ?? '',
+        linkedDebitName: json['linkedDebitName']?.toString() ?? '',
+        linkedCreditCode: json['linkedCreditCode']?.toString() ?? '',
+        linkedCreditName: json['linkedCreditName']?.toString() ?? '',
+      );
 }
