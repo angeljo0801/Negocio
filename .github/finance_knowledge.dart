@@ -180,7 +180,22 @@ class FinanceKnowledge {
     FinanceKnowledgeChunk(
       'Separación negocio y propietario',
       'personal negocio propietario gasto personal',
-      '''Distinguir operaciones del negocio de gastos personales del propietario. Un gasto personal pagado con dinero del negocio normalmente no debe clasificarse como gasto operativo; puede ser un retiro del propietario según los hechos.''',
+      '''Finanzas Definitiva mantiene dos ámbitos: Personal y Negocio. Una compra personal pagada con dinero personal solo afecta el libro Personal. Un gasto personal pagado con dinero del negocio afecta ambos ámbitos: en Negocio normalmente es un retiro del propietario y en Personal se reconoce el gasto contra una transferencia interna. Nunca clasificar una compra personal como gasto operativo del negocio.''',
+    ),
+    FinanceKnowledgeChunk(
+      'Aclarar fuente de fondos personales',
+      'personal negocio dinero pague fuente fondos',
+      '''Saber que una compra es personal no basta si no se conoce de dónde salió el dinero. Preguntar si se pagó con efectivo, banco o tarjeta personal, o con dinero del negocio. La fuente de fondos cambia las cuentas y puede requerir un movimiento vinculado entre Personal y Negocio.''',
+    ),
+    FinanceKnowledgeChunk(
+      'Paquetería pertenece solo al negocio',
+      'paqueteria sincronizacion negocio personal',
+      '''Todo dato sincronizado desde Paquetería pertenece exclusivamente a Finanzas del Negocio. Compras de clientes, paquetes, agentes, remesas operativas y gastos de Paquetería nunca deben entrar automáticamente en Finanzas Personales.''',
+    ),
+    FinanceKnowledgeChunk(
+      'Transferencias Personal y Negocio',
+      'transferencia personal negocio aporte retiro interno',
+      '''Mover dinero entre Personal y Negocio no crea por sí solo ingreso o gasto externo. Personal → Negocio se trata como inversión/aporte enlazado. Negocio → Personal se trata como retiro/transferencia enlazada. Mantener ambos lados relacionados evita duplicar dinero.''',
     ),
     FinanceKnowledgeChunk(
       'Validación final del lenguaje natural',
@@ -190,13 +205,13 @@ class FinanceKnowledge {
   ];
 
   static final List<List<double>> _vectors = chunks
-      .map((c) => _embed('${c.title} ${c.tags} ${c.text}'))
+      .map((c) => embedding('${c.title} ${c.tags} ${c.text}'))
       .toList(growable: false);
 
   static String retrieve(String query, {int topK = 6}) {
     final clean = query.trim();
     if (clean.isEmpty) return '';
-    final q = _embed(clean);
+    final q = embedding(clean);
     final scored = <MapEntry<int, double>>[];
     for (var i = 0; i < _vectors.length; i++) {
       var dot = 0.0;
@@ -219,7 +234,7 @@ class FinanceKnowledge {
         .join('\n\n');
   }
 
-  static List<double> _embed(String input) {
+  static List<double> embedding(String input) {
     var s = input.toLowerCase();
     const from = 'áéíóúüñ';
     const to = 'aeiouun';
@@ -263,6 +278,20 @@ class FinanceKnowledge {
       }
     }
     return v;
+  }
+
+  static double cosine(List<double> a, List<double> b) {
+    final n = math.min(a.length, b.length);
+    var dot = 0.0;
+    var aa = 0.0;
+    var bb = 0.0;
+    for (var i = 0; i < n; i++) {
+      dot += a[i] * b[i];
+      aa += a[i] * a[i];
+      bb += b[i] * b[i];
+    }
+    if (aa == 0 || bb == 0) return 0;
+    return dot / (math.sqrt(aa) * math.sqrt(bb));
   }
 
   static int _hash(String value) {
