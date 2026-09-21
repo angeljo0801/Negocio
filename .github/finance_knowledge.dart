@@ -243,7 +243,7 @@ class FinanceKnowledge {
       final token = tokens[i];
       add('w:$token', 1.0);
       if (i + 1 < tokens.length) {
-        add('b:$token_${tokens[i + 1]}', 1.35);
+        add('b:${token}_${tokens[i + 1]}', 1.35);
       }
       if (token.length >= 4) {
         for (var j = 0; j <= token.length - 3; j++) {
