@@ -13,6 +13,7 @@ on:
       - ".github/finance_ai_chat.dart"
       - ".github/finance_knowledge.dart"
       - ".github/finance_learning.dart"
+      - ".github/finance_tool_router.dart"
       - ".github/personal_finance.dart"
       - ".github/paqueteria_sync.dart"
       - ".github/finance_main_activity.kt"
@@ -43,6 +44,7 @@ jobs:
           cp .github/finance_ai_chat.dart finanzas_definitiva/lib/finance_ai_chat.dart
           cp .github/finance_knowledge.dart finanzas_definitiva/lib/finance_knowledge.dart
           cp .github/finance_learning.dart finanzas_definitiva/lib/finance_learning.dart
+          cp .github/finance_tool_router.dart finanzas_definitiva/lib/finance_tool_router.dart
           cp .github/personal_finance.dart finanzas_definitiva/lib/personal_finance.dart
           cp .github/paqueteria_sync.dart finanzas_definitiva/lib/paqueteria_sync.dart
 
@@ -84,11 +86,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Renombrar APK
-        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.5.0-Total.apk
+        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.5.1-Tool-Router.apk
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: Finanzas-Definitiva-APK
-          path: Finanzas-Definitiva-v2.5.0-Total.apk
+          path: Finanzas-Definitiva-v2.5.1-Tool-Router.apk
           retention-days: 30
