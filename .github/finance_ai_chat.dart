@@ -420,7 +420,10 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
   }
 
   Future<void> _refreshFromStore() async {
-    if (busy && mounted) return;
+    // If this State owns the active generation, do not overwrite streaming
+    // partials. A newly opened State has no _started value and may poll the
+    // persisted session while the old screen finishes in the background.
+    if (busy && _started != null) return;
     final loaded = await FinanceAiChatStore.load();
     if (loaded.isEmpty || !mounted) return;
     FinanceAiSession? currentActive;
