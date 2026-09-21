@@ -25,6 +25,8 @@ for imp in [
     "import 'finance_bot.dart';",
     "import 'finance_ai_settings.dart';",
     "import 'finance_ai_chat.dart';",
+    "import 'personal_finance.dart';",
+    "import 'finance_learning.dart';",
 ]:
     if imp not in s:
         s=s.replace(marker, marker+"\n"+imp, 1)
@@ -53,7 +55,11 @@ if "title:const Text('Chat IA')" not in s:
 if "title:const Text('Ajustes de IA')" not in s:
     tiles += "      ListTile(leading:const Icon(Icons.tune),title:const Text('Ajustes de IA'),subtitle:const Text('Gemini, LLM online, Ollama/local o GGUF en el teléfono'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const FinanceAiSettingsPage()))),\n"
 if "title:const Text('Asistente financiero')" not in s:
-    tiles += "      ListTile(leading:const Icon(Icons.smart_toy_outlined),title:const Text('Asistente financiero'),subtitle:const Text('Interpreta operaciones con la IA seleccionada'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:widget.onChanged)))),\n"
+    tiles += "      ListTile(leading:const Icon(Icons.smart_toy_outlined),title:const Text('Asistente financiero'),subtitle:const Text('Interpreta operaciones personales y del negocio con la IA'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:widget.onChanged)))),\n"
+if "title:const Text('Finanzas personales')" not in s:
+    tiles += "      ListTile(leading:const Icon(Icons.account_balance_wallet_outlined),title:const Text('Finanzas personales'),subtitle:const Text('Saldos y movimientos separados del negocio'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PersonalFinancePage()))),\n"
+if "title:const Text('Base de conocimiento')" not in s:
+    tiles += "      ListTile(leading:const Icon(Icons.auto_stories_outlined),title:const Text('Base de conocimiento'),subtitle:const Text('Reglas aprendidas y conocimiento agregado manualmente'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const LearnedFinanceRulesPage()))),\n"
 if "Sincronizar con Paquetería" not in s:
     tiles += "      ListTile(leading:const Icon(Icons.sync_alt),title:const Text('Sincronizar con Paquetería'),subtitle:const Text('Compras, paquetes, pendientes, agentes y gastos'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>PaqueteriaSyncPage(onChanged:widget.onChanged)))),\n"
 if tiles:
@@ -63,6 +69,7 @@ dash_marker="      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Nav
 if dash_marker in s:
     replacement="""      const SizedBox(height:14),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAiChatPage(onChanged:(){}))),icon:const Icon(Icons.chat_bubble_outline),label:const Text('Abrir Chat IA')),
       const SizedBox(height:8),OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>FinanceAssistantPage(onChanged:(){}))),icon:const Icon(Icons.smart_toy_outlined),label:const Text('Asistente financiero con IA')),
+      const SizedBox(height:8),OutlinedButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PersonalFinancePage())),icon:const Icon(Icons.account_balance_wallet_outlined),label:const Text('Finanzas personales')),
       const SizedBox(height:8),FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const DailyPositionPage())),icon:const Icon(Icons.today),label:const Text('Ver posición diaria')),"""
     s=s.replace(dash_marker,replacement,1)
 
@@ -71,7 +78,7 @@ main.write_text(s)
 # Dependencies for the Memora-style AI selector/chat and phone GGUF.
 pub=root/'pubspec.yaml'
 ps=pub.read_text()
-ps=re.sub(r'^version:.*$', 'version: 2.4.7+15', ps, flags=re.M)
+ps=re.sub(r'^version:.*$', 'version: 2.5.0+16', ps, flags=re.M)
 anchor='  file_picker: ^10.3.3'
 if anchor not in ps:
     raise SystemExit('No se encontro file_picker en pubspec')
