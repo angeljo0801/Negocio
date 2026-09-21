@@ -9,6 +9,8 @@ import 'database.dart';
 import 'finance_ai_service.dart';
 import 'finance_ai_settings.dart';
 import 'finance_knowledge.dart';
+import 'finance_learning.dart';
+import 'personal_finance.dart';
 
 class FinanceAiMessage {
   const FinanceAiMessage({
@@ -281,11 +283,13 @@ AL ACONSEJAR:
         if (decoded is Map) {
           final summary = decoded['summary'];
           b.writeln();
-          b.writeln('RESUMEN SINCRONIZADO DESDE PAQUETERÍA:');
+          b.writeln('PAQUETERÍA · SOLO FINANZAS DEL NEGOCIO:');
           b.writeln(jsonEncode(summary ?? const {}));
         }
       } catch (_) {}
     }
+    b.writeln();
+    b.writeln(await PersonalFinanceStore.contextText());
     return b.toString();
   }
 
@@ -305,18 +309,30 @@ AL ACONSEJAR:
     required bool includeLiveData,
   }) async {
     final live = includeLiveData ? await buildLiveContext() : '';
-    final retrieved = FinanceKnowledge.retrieve(
+    final baseRetrieved = FinanceKnowledge.retrieve(
       '$question\n${conversation(history)}',
       topK: 6,
     );
+    final learnedRetrieved = await FinanceLearningStore.retrieve(
+      '$question\n${conversation(history)}',
+      topK: 4,
+    );
+    final retrieved = [
+      baseRetrieved,
+      if (learnedRetrieved.isNotEmpty) learnedRetrieved,
+    ].join('\n\n');
     return '''
-Eres el Chat IA de Finanzas Definitiva: un asistente de contabilidad y administración financiera para un pequeño negocio.
+Eres el Chat IA de Finanzas Definitiva: un asistente para las finanzas personales del usuario y las finanzas de su negocio, mantenidas separadas pero conectables mediante transferencias internas.
 
 REGLAS CRÍTICAS:
 - No inventes datos financieros.
 - Distingue correctamente quién debe a quién.
 - Si falta información esencial para un asiento, pregunta antes de proponerlo.
 - Todo asiento válido debe cuadrar.
+- Determina si la consulta corresponde a Personal, Negocio o ambos.
+- Los datos sincronizados desde Paquetería pertenecen exclusivamente a Negocio.
+- Una compra personal nunca debe convertirse automáticamente en gasto del negocio.
+- Si una operación personal pudo pagarse con fondos personales o del negocio y no está claro, pregunta antes de concluir.
 
 CONOCIMIENTO LOCAL RECUPERADO POR EMBEDDINGS:
 $retrieved
@@ -353,6 +369,7 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
   bool autoSpanish = false;
   bool aiControlsExpanded = true;
   Timer? _timer;
+  Timer? _backgroundRefresh;
   DateTime? _started;
   double _seconds = 0;
 
@@ -368,12 +385,18 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
   void initState() {
     super.initState();
     _load();
+    _backgroundRefresh = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _refreshFromStore(),
+    );
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    unawaited(FinanceAiService.releaseProvider(provider));
+    _backgroundRefresh?.cancel();
+    // Do not unload/cancel the AI simply because the user leaves Chat IA.
+    // The pending generation can finish and persist into the session history.
     input.dispose();
     super.dispose();
   }
@@ -390,7 +413,41 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
       responseMode = p.getString('finance_ai_response_mode') ?? 'normal';
       useFinanceData = p.getBool('finance_ai_use_data') ?? true;
       autoSpanish = p.getBool('finance_ai_auto_es') ?? false;
+      busy = loaded.first.messages.isNotEmpty &&
+          loaded.first.messages.last.role == 'assistant' &&
+          loaded.first.messages.last.text.trim().toLowerCase() == 'thinking…';
     });
+  }
+
+  Future<void> _refreshFromStore() async {
+    if (busy && mounted) return;
+    final loaded = await FinanceAiChatStore.load();
+    if (loaded.isEmpty || !mounted) return;
+    FinanceAiSession? currentActive;
+    for (final item in loaded) {
+      if (item.id == activeId) {
+        currentActive = item;
+        break;
+      }
+    }
+    final selected = currentActive ?? loaded.first;
+    final isThinking = selected.messages.isNotEmpty &&
+        selected.messages.last.role == 'assistant' &&
+        selected.messages.last.text.trim().toLowerCase() == 'thinking…';
+    final local = active;
+    final changed = local == null ||
+        local.updatedAt != selected.updatedAt ||
+        local.messages.length != selected.messages.length ||
+        (local.messages.isNotEmpty &&
+            selected.messages.isNotEmpty &&
+            local.messages.last.text != selected.messages.last.text);
+    if (changed || busy != isThinking) {
+      setState(() {
+        sessions = loaded;
+        activeId = selected.id;
+        busy = isThinking;
+      });
+    }
   }
 
   Future<void> _save() => FinanceAiChatStore.saveAll(sessions);
@@ -539,15 +596,16 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
         onPartial: localDevice
             ? null
             : (partial) {
-                if (!mounted || partial.trim().isEmpty) return;
+                if (partial.trim().isEmpty) return;
                 final cur = active;
                 if (cur == null || cur.messages.isEmpty) return;
                 final m = List<FinanceAiMessage>.from(cur.messages);
                 m[m.length - 1] = m.last.copyWith(text: partial);
-                setState(() => _put(cur.copyWith(
-                      updatedAt: DateTime.now(),
-                      messages: m,
-                    )));
+                _put(cur.copyWith(
+                  updatedAt: DateTime.now(),
+                  messages: m,
+                ));
+                if (mounted) setState(() {});
               },
       );
       final cur = active;
@@ -555,7 +613,8 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
         final m = List<FinanceAiMessage>.from(cur.messages);
         m[m.length - 1] = m.last.copyWith(text: result);
         updated = cur.copyWith(updatedAt: DateTime.now(), messages: m);
-        if (mounted) setState(() => _put(updated));
+        _put(updated);
+        if (mounted) setState(() {});
       }
     } catch (e) {
       final cur = active;
@@ -565,7 +624,8 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
           text: 'No pude responder: ${FinanceAiService.userFacingError(e)}',
         );
         updated = cur.copyWith(updatedAt: DateTime.now(), messages: m);
-        if (mounted) setState(() => _put(updated));
+        _put(updated);
+        if (mounted) setState(() {});
       }
     } finally {
       final elapsed = _stopTimer();
@@ -578,7 +638,8 @@ class _FinanceAiChatPageState extends State<FinanceAiChatPage> {
         }
       }
       await _save();
-      if (mounted) setState(() => busy = false);
+      busy = false;
+      if (mounted) setState(() {});
     }
   }
 
