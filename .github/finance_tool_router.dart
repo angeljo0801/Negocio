@@ -255,7 +255,8 @@ class FinanceToolRouter {
       final personal = await d.rawQuery('''
         SELECT a.code,a.name,a.type,a.bank_name,a.account_kind,
           a.credit_limit,a.payment_due_day,a.reminder_enabled,
-          a.reminder_days_before,
+          a.reminder_days_before,a.rewards_type,a.rewards_balance,
+          a.rewards_percent,
           COALESCE(SUM(l.debit-l.credit),0) AS net
         FROM personal_accounts a
         LEFT JOIN personal_journal_lines l ON l.account_id=a.id
@@ -270,6 +271,11 @@ class FinanceToolRouter {
         final kind = row['account_kind']?.toString() ?? '';
         final limit = (row['credit_limit'] as num?)?.toDouble() ?? 0;
         final due = (row['payment_due_day'] as num?)?.toInt() ?? 0;
+        final rewardsType = row['rewards_type']?.toString() ?? 'none';
+        final rewardsBalance =
+            (row['rewards_balance'] as num?)?.toDouble() ?? 0;
+        final rewardsPercent =
+            (row['rewards_percent'] as num?)?.toDouble() ?? 0;
         if (balance.abs() >= 0.005 ||
             bank.isNotEmpty ||
             kind == 'savings' ||
@@ -285,7 +291,10 @@ class FinanceToolRouter {
               ' · límite ${limit.toStringAsFixed(2)}'
               ' · disponible ${available.toStringAsFixed(2)}'
               '${due > 0 ? ' · pago día $due' : ''}'
-              '${row['reminder_enabled'] == 1 ? ' · alarma activa' : ''}',
+              '${row['reminder_enabled'] == 1 ? ' · alarma activa' : ''}'
+              ' · rewards $rewardsType'
+              ' · ${rewardsPercent.toStringAsFixed(2)}%'
+              ' · acumulados ${rewardsBalance.toStringAsFixed(2)}',
             );
           }
           b.writeln();
