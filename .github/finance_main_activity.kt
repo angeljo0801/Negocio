@@ -7,11 +7,16 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Notification
 import android.content.BroadcastReceiver
+import android.content.ContentUris
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import java.io.File
 import java.util.Calendar
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -215,6 +220,162 @@ class ReminderBootReceiver : BroadcastReceiver() {
     }
 }
 
+object FinanceBackupStorage {
+    private const val FOLDER = "FinanzasDefinitiva"
+
+    private fun relativePath(): String =
+        Environment.DIRECTORY_DOWNLOADS + "/" + FOLDER + "/"
+
+    fun write(
+        context: Context,
+        fileName: String,
+        content: String,
+        overwrite: Boolean
+    ): Map<String, Any?> {
+        require(fileName.endsWith(".json")) { "El backup debe ser JSON." }
+
+        if (Build.VERSION.SDK_INT >= 29) {
+            val resolver = context.contentResolver
+            val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            var uri: Uri? = null
+
+            if (overwrite) {
+                resolver.query(
+                    collection,
+                    arrayOf(MediaStore.Downloads._ID),
+                    MediaStore.Downloads.DISPLAY_NAME + "=? AND " +
+                        MediaStore.Downloads.RELATIVE_PATH + "=?",
+                    arrayOf(fileName, relativePath()),
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val id = cursor.getLong(0)
+                        uri = ContentUris.withAppendedId(collection, id)
+                    }
+                }
+            }
+
+            if (uri == null) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/json")
+                    put(MediaStore.Downloads.RELATIVE_PATH, relativePath())
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                uri = resolver.insert(collection, values)
+                    ?: throw IllegalStateException("No pude crear la copia.")
+            }
+
+            resolver.openOutputStream(uri!!, "wt")?.use { out ->
+                out.write(content.toByteArray(Charsets.UTF_8))
+                out.flush()
+            } ?: throw IllegalStateException("No pude escribir la copia.")
+
+            val done = ContentValues().apply {
+                put(MediaStore.Downloads.IS_PENDING, 0)
+            }
+            resolver.update(uri!!, done, null, null)
+            return mapOf(
+                "name" to fileName,
+                "uri" to uri.toString(),
+                "folder" to "Descargas/$FOLDER"
+            )
+        }
+
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
+            ),
+            FOLDER
+        )
+        if (!dir.exists()) dir.mkdirs()
+        val file = File(dir, fileName)
+        if (file.exists() && !overwrite) {
+            throw IllegalStateException("Ya existe una copia con ese nombre.")
+        }
+        file.writeText(content, Charsets.UTF_8)
+        return mapOf(
+            "name" to file.name,
+            "uri" to Uri.fromFile(file).toString(),
+            "folder" to file.parent
+        )
+    }
+
+    fun list(context: Context): List<Map<String, Any?>> {
+        if (Build.VERSION.SDK_INT >= 29) {
+            val resolver = context.contentResolver
+            val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            val result = mutableListOf<Map<String, Any?>>()
+            resolver.query(
+                collection,
+                arrayOf(
+                    MediaStore.Downloads._ID,
+                    MediaStore.Downloads.DISPLAY_NAME,
+                    MediaStore.Downloads.DATE_MODIFIED,
+                    MediaStore.Downloads.SIZE
+                ),
+                MediaStore.Downloads.RELATIVE_PATH + "=?",
+                arrayOf(relativePath()),
+                MediaStore.Downloads.DATE_MODIFIED + " DESC"
+            )?.use { cursor ->
+                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                val nameCol =
+                    cursor.getColumnIndexOrThrow(MediaStore.Downloads.DISPLAY_NAME)
+                val dateCol =
+                    cursor.getColumnIndexOrThrow(MediaStore.Downloads.DATE_MODIFIED)
+                val sizeCol =
+                    cursor.getColumnIndexOrThrow(MediaStore.Downloads.SIZE)
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameCol) ?: continue
+                    if (!name.endsWith(".json")) continue
+                    val id = cursor.getLong(idCol)
+                    val uri = ContentUris.withAppendedId(collection, id)
+                    result.add(
+                        mapOf(
+                            "name" to name,
+                            "uri" to uri.toString(),
+                            "modifiedMs" to cursor.getLong(dateCol) * 1000L,
+                            "size" to cursor.getLong(sizeCol)
+                        )
+                    )
+                }
+            }
+            return result
+        }
+
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS
+            ),
+            FOLDER
+        )
+        if (!dir.exists()) return emptyList()
+        return (dir.listFiles() ?: emptyArray())
+            .filter { it.isFile && it.name.endsWith(".json") }
+            .sortedByDescending { it.lastModified() }
+            .map {
+                mapOf(
+                    "name" to it.name,
+                    "uri" to Uri.fromFile(it).toString(),
+                    "modifiedMs" to it.lastModified(),
+                    "size" to it.length()
+                )
+            }
+    }
+
+    fun read(context: Context, rawUri: String): String {
+        val uri = Uri.parse(rawUri)
+        return if (uri.scheme == "content") {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                input.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } ?: throw IllegalStateException("No pude abrir la copia.")
+        } else {
+            val file = File(uri.path ?: throw IllegalArgumentException("Ruta inválida."))
+            file.readText(Charsets.UTF_8)
+        }
+    }
+}
+
 class MainActivity : FlutterActivity() {
     private var notificationPermissionResult: MethodChannel.Result? = null
     private val notificationPermissionRequest = 9021
@@ -261,6 +422,48 @@ class MainActivity : FlutterActivity() {
                     "PAQUETERIA_NOT_AVAILABLE",
                     "No pude leer Paquetería: " +
                         (e.message ?: "error desconocido"),
+                    null
+                )
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.angel.finanzas/backups"
+        ).setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "writeBackup" -> {
+                        val fileName =
+                            call.argument<String>("fileName") ?: "Finanzas-Backup.json"
+                        val content = call.argument<String>("content") ?: ""
+                        val overwrite = call.argument<Boolean>("overwrite") ?: false
+                        result.success(
+                            FinanceBackupStorage.write(
+                                applicationContext,
+                                fileName,
+                                content,
+                                overwrite
+                            )
+                        )
+                    }
+                    "listBackups" -> {
+                        result.success(
+                            FinanceBackupStorage.list(applicationContext)
+                        )
+                    }
+                    "readBackup" -> {
+                        val uri = call.argument<String>("uri") ?: ""
+                        result.success(
+                            FinanceBackupStorage.read(applicationContext, uri)
+                        )
+                    }
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) {
+                result.error(
+                    "BACKUP_ERROR",
+                    e.message ?: "Error de copia de seguridad.",
                     null
                 )
             }
