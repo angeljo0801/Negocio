@@ -118,6 +118,55 @@ class FinanceLearningStore {
     return true;
   }
 
+  static Future<void> saveManual({
+    int? id,
+    required String title,
+    required String text,
+    required String tags,
+    required String scope,
+  }) async {
+    final cleanTitle = title.trim();
+    final cleanText = text.trim();
+    if (cleanText.isEmpty) {
+      throw Exception('Escribe el conocimiento que quieres guardar.');
+    }
+    await ensureSchema();
+    final d = await AppDatabase.instance.db;
+    final selectedScope =
+        const {'personal', 'business', 'both'}.contains(scope) ? scope : 'both';
+    final vector = FinanceKnowledge.embedding(
+      '$cleanTitle $tags $cleanText',
+    );
+    final now = DateTime.now().toIso8601String();
+    final values = {
+      'title': cleanTitle.isEmpty
+          ? (cleanText.length > 80 ? cleanText.substring(0, 80) : cleanText)
+          : cleanTitle,
+      'text': cleanText,
+      'tags': tags.trim(),
+      'scope': selectedScope,
+      'vector_json': jsonEncode(vector),
+      'confidence': 1.0,
+      'enabled': 1,
+      'source': 'manual',
+      'updated_at': now,
+    };
+    if (id == null) {
+      await d.insert('learned_finance_rules', {
+        ...values,
+        'created_at': now,
+        'uses': 0,
+      });
+    } else {
+      await d.update(
+        'learned_finance_rules',
+        values,
+        where: 'id=?',
+        whereArgs: [id],
+      );
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> all() async {
     await ensureSchema();
     final d = await AppDatabase.instance.db;
@@ -161,16 +210,127 @@ class _LearnedFinanceRulesPageState extends State<LearnedFinanceRulesPage> {
     if (mounted) setState(() => rules = data);
   }
 
+
+  Future<void> _editKnowledge([Map<String, dynamic>? existing]) async {
+    final title = TextEditingController(
+      text: existing?['title']?.toString() ?? '',
+    );
+    final body = TextEditingController(
+      text: existing?['text']?.toString() ?? '',
+    );
+    final tags = TextEditingController(
+      text: existing?['tags']?.toString() ?? '',
+    );
+    var scope = existing?['scope']?.toString() ?? 'both';
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: Text(
+            existing == null ? 'Agregar conocimiento' : 'Editar conocimiento',
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: title,
+                  decoration: const InputDecoration(
+                    labelText: 'Título (opcional)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: body,
+                  minLines: 4,
+                  maxLines: 10,
+                  decoration: const InputDecoration(
+                    labelText: 'Regla o conocimiento',
+                    hintText:
+                        'Ej.: Si una compra es personal, confirmar con qué dinero se pagó antes de registrarla.',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: tags,
+                  decoration: const InputDecoration(
+                    labelText: 'Etiquetas (opcional)',
+                    hintText: 'deuda, personal, tarjeta...',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: scope,
+                  decoration: const InputDecoration(labelText: 'Ámbito'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'both',
+                      child: Text('Personal y Negocio'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'personal',
+                      child: Text('Solo Personal'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'business',
+                      child: Text('Solo Negocio'),
+                    ),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setDialog(() => scope = v);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: body.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, true),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved == true) {
+      await FinanceLearningStore.saveManual(
+        id: existing?['id'] as int?,
+        title: title.text,
+        text: body.text,
+        tags: tags.text,
+        scope: scope,
+      );
+      await _load();
+    }
+    title.dispose();
+    body.dispose();
+    tags.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Reglas aprendidas por la IA')),
+      appBar: AppBar(title: const Text('Base de conocimiento')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _editKnowledge(),
+        icon: const Icon(Icons.add),
+        label: const Text('Agregar conocimiento'),
+      ),
       body: rules.isEmpty
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  'Todavía no hay reglas aprendidas. La IA guardará reglas generales verificadas y podrás desactivarlas o borrarlas aquí.',
+                  'Todavía no hay conocimiento adicional. Puedes agregarlo manualmente o dejar que la IA aprenda reglas generales verificadas.',
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -185,8 +345,9 @@ class _LearnedFinanceRulesPageState extends State<LearnedFinanceRulesPage> {
                   child: ListTile(
                     title: Text(r['title'].toString()),
                     subtitle: Text(
-                      '${r['text']}\nÁmbito: ${r['scope']} · usos: ${r['uses']}',
+                      '${r['text']}\nÁmbito: ${r['scope']} · fuente: ${r['source']} · usos: ${r['uses']}',
                     ),
+                    onTap: () => _editKnowledge(r),
                     isThreeLine: true,
                     leading: Switch(
                       value: enabled,
