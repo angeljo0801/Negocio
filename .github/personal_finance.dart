@@ -1188,6 +1188,7 @@ class _PersonalAccountsPageState extends State<PersonalAccountsPage> {
     final unassigned = rows.where(
       (e) =>
           e['bank_id'] == null &&
+          e['code'] != 'P2010' &&
           const {'cash', 'checking', 'savings', 'credit_card'}
               .contains(e['account_kind']?.toString()),
     );
@@ -1233,6 +1234,17 @@ class _PersonalAccountsPageState extends State<PersonalAccountsPage> {
                     onPressed: _addBank,
                     icon: const Icon(Icons.add_business_outlined),
                     label: const Text('Agregar otro banco'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PersonalInternalAccountsPage(),
+                      ),
+                    ),
+                    icon: const Icon(Icons.inventory_2_outlined),
+                    label: const Text('Ver cuentas internas'),
                   ),
                   const SizedBox(height: 10),
                   for (final bank in bankRows) ...[
@@ -1305,6 +1317,85 @@ class _PersonalAccountsPageState extends State<PersonalAccountsPage> {
                     ),
                 ],
               ),
+            ),
+    );
+  }
+}
+
+class PersonalInternalAccountsPage extends StatefulWidget {
+  const PersonalInternalAccountsPage({super.key});
+
+  @override
+  State<PersonalInternalAccountsPage> createState() =>
+      _PersonalInternalAccountsPageState();
+}
+
+class _PersonalInternalAccountsPageState
+    extends State<PersonalInternalAccountsPage> {
+  bool loading = true;
+  List<Map<String, dynamic>> rows = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final data = await PersonalFinanceStore.accountBalances();
+    if (!mounted) return;
+    setState(() {
+      rows = data
+          .where(
+            (e) =>
+                e['is_system'] == 1 &&
+                const {'P2010', 'P2020', 'P1040', 'P3010', 'P3900'}
+                    .contains(e['code']?.toString()),
+          )
+          .toList();
+      loading = false;
+    });
+  }
+
+  double _shown(Map<String, dynamic> row) {
+    final net = (row['net'] as num?)?.toDouble() ?? 0;
+    return row['type'] == 'liability' ? -net : net;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Cuentas internas')),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(14),
+              children: [
+                const Text(
+                  'Estas cuentas sirven para compatibilidad contable y casos '
+                  'temporales. No representan necesariamente una cuenta o '
+                  'tarjeta real de un banco.',
+                ),
+                const SizedBox(height: 12),
+                for (final row in rows)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.inventory_2_outlined),
+                      title: Text(
+                        row['code'].toString() +
+                            ' · ' +
+                            row['name'].toString(),
+                      ),
+                      subtitle: Text(
+                        row['code'] == 'P2010'
+                            ? 'Agrupa temporalmente deuda de tarjetas cuando '
+                                'todavía no sabes cuál tarjeta real corresponde.'
+                            : 'Cuenta interna del sistema personal.',
+                      ),
+                      trailing: Text(_shown(row).toStringAsFixed(2)),
+                    ),
+                  ),
+              ],
             ),
     );
   }
