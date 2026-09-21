@@ -69,10 +69,14 @@ class FinanceLearningStore {
   }) async {
     final clean = text.trim();
     if (clean.length < 35 || clean.length > 900) return false;
+    final lower = clean.toLowerCase();
     if (RegExp(
-      r'\b\d+(?:[.,]\d+)?\s*(?:usd|dolares|dólares|pesos)?\b',
-      caseSensitive: false,
-    ).hasMatch(clean)) {
+          r'\b\d+(?:[.,]\d+)?\s*(?:usd|dolares|dólares|pesos)?\b',
+          caseSensitive: false,
+        ).hasMatch(clean) &&
+        !lower.contains('cuenta') &&
+        !lower.contains('código') &&
+        !lower.contains('codigo')) {
       return false;
     }
     await ensureSchema();
@@ -291,9 +295,7 @@ class _LearnedFinanceRulesPageState extends State<LearnedFinanceRulesPage> {
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              onPressed: body.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.pop(dialogContext, true),
+              onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Guardar'),
             ),
           ],
