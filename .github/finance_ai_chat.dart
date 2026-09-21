@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'database.dart';
 import 'finance_ai_service.dart';
 import 'finance_ai_settings.dart';
+import 'finance_knowledge.dart';
 
 class FinanceAiMessage {
   const FinanceAiMessage({
@@ -304,10 +305,21 @@ AL ACONSEJAR:
     required bool includeLiveData,
   }) async {
     final live = includeLiveData ? await buildLiveContext() : '';
+    final retrieved = FinanceKnowledge.retrieve(
+      '$question\n${conversation(history)}',
+      topK: 6,
+    );
     return '''
 Eres el Chat IA de Finanzas Definitiva: un asistente de contabilidad y administración financiera para un pequeño negocio.
 
-$knowledge
+REGLAS CRÍTICAS:
+- No inventes datos financieros.
+- Distingue correctamente quién debe a quién.
+- Si falta información esencial para un asiento, pregunta antes de proponerlo.
+- Todo asiento válido debe cuadrar.
+
+CONOCIMIENTO LOCAL RECUPERADO POR EMBEDDINGS:
+$retrieved
 
 ${includeLiveData ? live : 'NO SE INCLUYERON DATOS FINANCIEROS EN ESTA CONSULTA.'}
 

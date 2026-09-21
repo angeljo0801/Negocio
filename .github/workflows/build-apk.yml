@@ -11,11 +11,16 @@ on:
       - ".github/finance_ai_service.dart"
       - ".github/finance_ai_settings.dart"
       - ".github/finance_ai_chat.dart"
+      - ".github/finance_knowledge.dart"
       - ".github/paqueteria_sync.dart"
       - ".github/finance_main_activity.kt"
       - ".github/LocalAiManagerBridge.kt"
       - ".github/patch_finanzas.py"
       - ".github/archive-parts/**"
+
+concurrency:
+  group: finanzas-definitiva-apk
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -34,6 +39,7 @@ jobs:
           cp .github/finance_ai_service.dart finanzas_definitiva/lib/finance_ai_service.dart
           cp .github/finance_ai_settings.dart finanzas_definitiva/lib/finance_ai_settings.dart
           cp .github/finance_ai_chat.dart finanzas_definitiva/lib/finance_ai_chat.dart
+          cp .github/finance_knowledge.dart finanzas_definitiva/lib/finance_knowledge.dart
           cp .github/paqueteria_sync.dart finanzas_definitiva/lib/paqueteria_sync.dart
 
       - name: Instalar Flutter
@@ -74,11 +80,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Renombrar APK
-        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.4.6.apk
+        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.4.7-Knowledge.apk
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: Finanzas-Definitiva-APK
-          path: Finanzas-Definitiva-v2.4.6.apk
+          path: Finanzas-Definitiva-v2.4.7-Knowledge.apk
           retention-days: 30

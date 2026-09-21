@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'database.dart';
 import 'finance_ai_service.dart';
+import 'finance_knowledge.dart';
 import 'models.dart';
 
 class FinanceAssistantPage extends StatefulWidget {
@@ -130,6 +131,7 @@ class _FinanceAssistantPageState extends State<FinanceAssistantPage> {
     required String original,
     required String catalog,
     required String history,
+    required String knowledge,
     required Map<String, dynamic> draft,
   }) async {
     final prompt = '''
@@ -159,6 +161,9 @@ REGLAS OBLIGATORIAS:
 
 Devuelve SOLO JSON válido:
 {"reply":"texto breve y claro","action":"proposal|clarify|answer","description":"","amount":0,"debitCode":"","creditCode":"","cashClass":"operating|investing|financing|noncash"}
+
+CONOCIMIENTO LOCAL RECUPERADO:
+$knowledge
 
 CATÁLOGO:
 $catalog
@@ -201,27 +206,26 @@ ${jsonEncode(draft)}
   Future<_BotReply> _answerWithAi(String original) async {
     final catalog = await _accountCatalog();
     final history = _conversationContext();
+    final knowledge = FinanceKnowledge.retrieve(
+      '$original\n$history',
+      topK: 6,
+    );
 
     final prompt = '''
 Eres el intérprete inteligente del Asistente financiero de Finanzas Definitiva.
 Entiende lenguaje natural en español o inglés, incluso frases coloquiales, incompletas o con errores.
 Decide si el usuario hace una pregunta, describe una operación contable o necesita una aclaración.
 
-REGLAS:
-- Nunca guardes nada. Solo explica, pregunta o propone un asiento para que el usuario lo confirme después.
-- No inventes importes, nombres, fechas, impuestos, ganancias ni datos que el usuario no haya dado.
-- Usa el historial para entender respuestas cortas como "sí", "no", "fue en efectivo" o "me debe 300".
-- Si falta un dato indispensable, action debe ser "clarify" y reply debe hacer UNA pregunta concreta.
-- Si es una explicación o consejo sin asiento, usa action "answer".
-- Solo usa action "proposal" cuando la operación pueda representarse correctamente con exactamente una cuenta al Debe y una al Haber.
-- Usa únicamente códigos que existan en el catálogo de cuentas.
-- Nunca confundas la dirección de una deuda: "me deben", "el cliente me debe" o "me tienen que pagar" puede implicar Cuentas por cobrar; "yo debo", "le debo", "tengo que pagarle" o "debo a alguien" implica una obligación/pasivo y NUNCA Cuentas por cobrar.
-- Una frase como "le debo a mi amigo 500" NO dice por qué existe la deuda ni confirma que entró efectivo. Debes usar action "clarify" y preguntar si fue un préstamo recibido o una compra/gasto pendiente de pago.
-- Solo registra Debe Efectivo / Haber Préstamo cuando el usuario confirme que recibió el dinero como préstamo.
-- Si la deuda proviene de una compra o gasto a crédito, el Debe depende de lo adquirido o gastado y el Haber normalmente será Cuentas por pagar.
-- Una compra pagada por el negocio por cuenta de un cliente que luego debe reembolsarla es un adelanto recuperable: Debe Cuentas por cobrar y Haber Efectivo, salvo que el usuario diga que fue inventario o mercancía para vender.
-- Ejemplo clave: "hice una compra de 300 y el cliente todavía me tiene que pagar" normalmente significa Debe 1020 Cuentas por cobrar 300 y Haber 1010 Efectivo 300.
-- Si una operación requiere más de dos líneas, explícalo y usa action "answer" en vez de forzar un asiento incorrecto.
+REGLAS CRÍTICAS:
+- Nunca guardes nada. Solo explica, pregunta o propone; el usuario confirma después.
+- No inventes datos. Usa el historial para respuestas cortas.
+- Si falta un dato que cambia las cuentas, usa action "clarify" y haz UNA pregunta concreta.
+- Usa action "proposal" únicamente con importe válido, una cuenta Debe y una Haber justificadas por el mensaje.
+- Usa solo códigos del catálogo. No inviertas quién debe a quién.
+- Si la operación requiere más de dos líneas, explícalo y no fuerces un asiento incorrecto.
+
+CONOCIMIENTO LOCAL RECUPERADO POR EMBEDDINGS:
+$knowledge
 
 Devuelve SOLO un objeto JSON válido, sin texto extra, con esta forma:
 {"reply":"texto breve y claro","action":"proposal|clarify|answer","description":"","amount":0,"debitCode":"","creditCode":"","cashClass":"operating|investing|financing|noncash"}
@@ -257,11 +261,30 @@ $original
       original: original,
       catalog: catalog,
       history: history,
+      knowledge: knowledge,
       draft: draft,
     );
 
     final reply = (obj['reply'] ?? '').toString().trim();
     final action = (obj['action'] ?? 'answer').toString().trim().toLowerCase();
+    final requestText = _norm('$original $history');
+    final explicitlyWantsEntry = _has(requestText, [
+      'crea el asiento',
+      'crear el asiento',
+      'creame el asiento',
+      'haz el asiento',
+      'hacer el asiento',
+      'registra el asiento',
+      'registrar el asiento',
+      'propon el asiento',
+      'proponer el asiento',
+    ]);
+
+    if (explicitlyWantsEntry && action == 'answer') {
+      return const _BotReply(
+        'Antes de mostrarte un asiento necesito confirmar los datos que determinan el Debe y el Haber. Dime qué originó la operación y si se pagó, se cobró o quedó pendiente.',
+      );
+    }
 
     if (action != 'proposal') {
       return _BotReply(
@@ -308,29 +331,8 @@ $original
       );
     }
 
-    final visible = StringBuffer();
-    if (reply.isNotEmpty) visible.write(reply);
-    if (visible.isNotEmpty) visible.write('\n\n');
-    visible.writeln('Propuesta:');
-    visible.writeln(
-      'Debe: ' +
-          debitCode +
-          ' · ' +
-          debitName +
-          ' — \$' +
-          amount.toStringAsFixed(2),
-    );
-    visible.write(
-      'Haber: ' +
-          creditCode +
-          ' · ' +
-          creditName +
-          ' — \$' +
-          amount.toStringAsFixed(2),
-    );
-
     return _BotReply(
-      visible.toString(),
+      reply.isEmpty ? 'La propuesta pasó la revisión final de la IA.' : reply,
       proposal: _BotProposal(
         description:
             description.isEmpty ? 'Asiento sugerido por IA' : description,
@@ -381,6 +383,19 @@ $original
     if (userOwesSomeone && !originAlreadyClear) {
       return _BotReply(
         'Entiendo que debes ${amount.toStringAsFixed(2)}, pero necesito saber qué originó esa deuda antes de proponerte un asiento. ¿Esa persona te prestó el dinero y lo recibiste, o le debes por una compra o gasto que todavía no has pagado?',
+      );
+    }
+
+    final someoneOwesUser = amount != null &&
+        _has(normalized, [
+          'me deben ',
+          'me debe ',
+          'me tienen que pagar',
+          'tienen que pagarme',
+        ]);
+    if (someoneOwesUser && !originAlreadyClear) {
+      return _BotReply(
+        'Entiendo que te deben ${amount.toStringAsFixed(2)}, pero necesito saber qué originó ese derecho de cobro antes de proponerte un asiento. ¿Fue una venta a crédito, dinero que tú prestaste, una compra que pagaste por esa persona u otra cosa?',
       );
     }
 
@@ -561,7 +576,7 @@ $original
     String cashClass = 'operating',
   }) {
     return _BotReply(
-      '$explanation\n\nPropuesta:\nDebe: $debitCode · $debitName — \$${amount.toStringAsFixed(2)}\nHaber: $creditCode · $creditName — \$${amount.toStringAsFixed(2)}',
+      explanation,
       proposal: _BotProposal(
         description: description,
         amount: amount,
@@ -647,6 +662,99 @@ $original
     });
   }
 
+  Widget _entryRow(
+    String side,
+    String code,
+    String name,
+    double amount,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 62,
+            child: Text(
+              side,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              '$code · $name',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '\${amount.toStringAsFixed(2)}',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _proposalCard(_BotProposal proposal) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.receipt_long_outlined, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Propuesta de asiento',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(proposal.description),
+          const SizedBox(height: 6),
+          Text(
+            'Importe: \${proposal.amount.toStringAsFixed(2)}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const Divider(height: 20),
+          _entryRow(
+            'DEBE',
+            proposal.debitCode,
+            proposal.debitName,
+            proposal.amount,
+          ),
+          const Divider(height: 1),
+          _entryRow(
+            'HABER',
+            proposal.creditCode,
+            proposal.creditName,
+            proposal.amount,
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: () => createProposal(proposal),
+            icon: const Icon(Icons.post_add),
+            label: const Text('Revisar y crear asiento'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const suggestions = [
@@ -694,15 +802,8 @@ $original
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(m.text),
-                        if (m.proposal != null) ...[
-                          const SizedBox(height: 10),
-                          FilledButton.icon(
-                            onPressed: () => createProposal(m.proposal!),
-                            icon: const Icon(Icons.post_add),
-                            label: const Text('Revisar y crear asiento'),
-                          ),
-                        ],
+                        if (m.text.trim().isNotEmpty) Text(m.text),
+                        if (m.proposal != null) _proposalCard(m.proposal!),
                       ],
                     ),
                   ),
