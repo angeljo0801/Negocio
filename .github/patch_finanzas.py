@@ -27,6 +27,7 @@ for imp in [
     "import 'finance_ai_chat.dart';",
     "import 'personal_finance.dart';",
     "import 'finance_learning.dart';",
+    "import 'finance_backup.dart';",
 ]:
     if imp not in s:
         s=s.replace(marker, marker+"\n"+imp, 1)
@@ -38,6 +39,9 @@ if old in s:
   void initState() {
     super.initState();
     Future.microtask(() async {
+      try {
+        await FinanceBackupService.autoBackupIfDue();
+      } catch (_) {}
       final result = await PaqueteriaSyncService.sync(silent: true);
       if (result != null && mounted) refresh();
     });
@@ -60,6 +64,8 @@ if "title:const Text('Finanzas personales')" not in s:
     tiles += "      ListTile(leading:const Icon(Icons.account_balance_wallet_outlined),title:const Text('Finanzas personales'),subtitle:const Text('Saldos y movimientos separados del negocio'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PersonalFinancePage()))),\n"
 if "title:const Text('Base de conocimiento')" not in s:
     tiles += "      ListTile(leading:const Icon(Icons.auto_stories_outlined),title:const Text('Base de conocimiento'),subtitle:const Text('Reglas aprendidas y conocimiento agregado manualmente'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const LearnedFinanceRulesPage()))),\n"
+if "title:const Text('Copias de seguridad')" not in s:
+    tiles += "      ListTile(leading:const Icon(Icons.backup_outlined),title:const Text('Copias de seguridad'),subtitle:const Text('Crear, restaurar y configurar copias automáticas'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const FinanceBackupPage()))),\n"
 if "Sincronizar con Paquetería" not in s:
     tiles += "      ListTile(leading:const Icon(Icons.sync_alt),title:const Text('Sincronizar con Paquetería'),subtitle:const Text('Compras, paquetes, pendientes, agentes y gastos'),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>PaqueteriaSyncPage(onChanged:widget.onChanged)))),\n"
 if tiles:
@@ -78,7 +84,7 @@ main.write_text(s)
 # Dependencies for the Memora-style AI selector/chat and phone GGUF.
 pub=root/'pubspec.yaml'
 ps=pub.read_text()
-ps=re.sub(r'^version:.*$', 'version: 2.5.4+20', ps, flags=re.M)
+ps=re.sub(r'^version:.*$', 'version: 2.5.5+21', ps, flags=re.M)
 anchor='  file_picker: ^10.3.3'
 if anchor not in ps:
     raise SystemExit('No se encontro file_picker en pubspec')
@@ -107,6 +113,10 @@ if 'android.permission.POST_NOTIFICATIONS' not in m:
     m=m.replace(manifest_open,manifest_open+'\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',1)
 if 'android.permission.RECEIVE_BOOT_COMPLETED' not in m:
     m=m.replace(manifest_open,manifest_open+'\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',1)
+if 'android.permission.WRITE_EXTERNAL_STORAGE' not in m:
+    m=m.replace(manifest_open,manifest_open+'\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />',1)
+if 'android.permission.READ_EXTERNAL_STORAGE' not in m:
+    m=m.replace(manifest_open,manifest_open+'\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />',1)
 if 'android:usesCleartextTraffic' not in m:
     m=m.replace('<application','<application android:usesCleartextTraffic="true"',1)
 if 'com.angelapps.paqueteria.finance_sync' not in m:
@@ -138,4 +148,49 @@ gradle=root/'android/app/build.gradle.kts'
 g=gradle.read_text()
 g=g.replace('minSdk = flutter.minSdkVersion','minSdk = 26')
 g=g.replace('minSdk = 24','minSdk = 26')
+g=re.sub(
+    r'namespace\s*=\s*"[^"]+"',
+    'namespace = "com.angel.finanzas.finanzas_definitiva"',
+    g,
+    count=1,
+)
+g=re.sub(
+    r'applicationId\s*=\s*"[^"]+"',
+    'applicationId = "com.angel.finanzas.finanzas_definitiva"',
+    g,
+    count=1,
+)
+
+# A stable applicationId is mandatory for Android updates. A stable signing key
+# is equally mandatory, but the repository is public, so the key is never
+# committed. When GitHub Actions secrets are configured, the workflow provides
+# the keystore and these values only inside the ephemeral build runner.
+import os
+key_alias=os.environ.get('FINANZAS_KEY_ALIAS','').strip()
+store_password=os.environ.get('FINANZAS_KEYSTORE_PASSWORD','').strip()
+key_password=os.environ.get('FINANZAS_KEY_PASSWORD','').strip()
+keystore=(root/'android/app/finanzas-release.jks')
+if keystore.exists() and key_alias and store_password and key_password:
+    def esc(v):
+        return v.replace('\\','\\\\').replace('"','\\\"')
+    signing='''    signingConfigs {
+        create("finanzasRelease") {
+            keyAlias = "''' + esc(key_alias) + '''"
+            keyPassword = "''' + esc(key_password) + '''"
+            storeFile = file("finanzas-release.jks")
+            storePassword = "''' + esc(store_password) + '''"
+        }
+    }
+
+'''
+    if 'create("finanzasRelease")' not in g:
+        g=g.replace('    buildTypes {',signing+'    buildTypes {',1)
+    g=re.sub(
+        r'(getByName\("release"\)\s*\{)(.*?)(\n\s*\})',
+        lambda m: m.group(1)+m.group(2)+
+            '\n            signingConfig = signingConfigs.getByName("finanzasRelease")'+m.group(3),
+        g,
+        count=1,
+        flags=re.S,
+    )
 gradle.write_text(g)
