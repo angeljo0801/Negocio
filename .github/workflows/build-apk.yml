@@ -13,6 +13,7 @@ on:
       - ".github/finance_ai_chat.dart"
       - ".github/finance_knowledge.dart"
       - ".github/finance_learning.dart"
+      - ".github/finance_backup.dart"
       - ".github/finance_tool_router.dart"
       - ".github/personal_finance.dart"
       - ".github/paqueteria_sync.dart"
@@ -44,6 +45,7 @@ jobs:
           cp .github/finance_ai_chat.dart finanzas_definitiva/lib/finance_ai_chat.dart
           cp .github/finance_knowledge.dart finanzas_definitiva/lib/finance_knowledge.dart
           cp .github/finance_learning.dart finanzas_definitiva/lib/finance_learning.dart
+          cp .github/finance_backup.dart finanzas_definitiva/lib/finance_backup.dart
           cp .github/finance_tool_router.dart finanzas_definitiva/lib/finance_tool_router.dart
           cp .github/personal_finance.dart finanzas_definitiva/lib/personal_finance.dart
           cp .github/paqueteria_sync.dart finanzas_definitiva/lib/paqueteria_sync.dart
@@ -59,10 +61,18 @@ jobs:
         run: flutter create . --platforms=android --org com.angel.finanzas
 
       - name: Aplicar integración
+        env:
+          FINANZAS_KEYSTORE_B64: ${{ secrets.FINANZAS_KEYSTORE_B64 }}
+          FINANZAS_KEYSTORE_PASSWORD: ${{ secrets.FINANZAS_KEYSTORE_PASSWORD }}
+          FINANZAS_KEY_ALIAS: ${{ secrets.FINANZAS_KEY_ALIAS }}
+          FINANZAS_KEY_PASSWORD: ${{ secrets.FINANZAS_KEY_PASSWORD }}
         run: |
           mkdir -p finanzas_definitiva/android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva
           cp .github/finance_main_activity.kt finanzas_definitiva/android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva/MainActivity.kt
           cp .github/LocalAiManagerBridge.kt finanzas_definitiva/android/app/src/main/kotlin/com/angel/finanzas/finanzas_definitiva/LocalAiManagerBridge.kt
+          if [ -n "$FINANZAS_KEYSTORE_B64" ]; then
+            printf '%s' "$FINANZAS_KEYSTORE_B64" | base64 --decode > finanzas_definitiva/android/app/finanzas-release.jks
+          fi
           python3 .github/patch_finanzas.py
 
       - name: Descargar dependencias
@@ -86,11 +96,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Renombrar APK
-        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.5.4-Wallet-Banks-Rewards.apk
+        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.5.5-Backup-Stable-ID.apk
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: Finanzas-Definitiva-APK
-          path: Finanzas-Definitiva-v2.5.4-Wallet-Banks-Rewards.apk
+          path: Finanzas-Definitiva-v2.5.5-Backup-Stable-ID.apk
           retention-days: 30
