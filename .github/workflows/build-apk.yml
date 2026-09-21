@@ -86,11 +86,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Renombrar APK
-        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.5.1-Tool-Router.apk
+        run: cp finanzas_definitiva/build/app/outputs/flutter-apk/app-release.apk Finanzas-Definitiva-v2.5.2-Manual-Personal.apk
 
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
           name: Finanzas-Definitiva-APK
-          path: Finanzas-Definitiva-v2.5.1-Tool-Router.apk
+          path: Finanzas-Definitiva-v2.5.2-Manual-Personal.apk
           retention-days: 30
