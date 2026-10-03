@@ -7,6 +7,7 @@ on:
       - "paqueteria/**"
       - ".github/workflows/build-paqueteria.yml"
       - ".github/patch_paqueteria.py"
+      - ".github/patch_gmail_*.py"
   workflow_dispatch:
 
 permissions:
@@ -41,7 +42,15 @@ jobs:
           rsvg-convert -w 1024 -h 1024 paqueteria/assets/icon.svg -o app/assets/icon.png
 
       - name: Patch source and Android
-        run: python3 .github/patch_paqueteria.py
+        run: |
+          python3 .github/patch_paqueteria.py
+          python3 .github/patch_gmail_main.py
+          python3 .github/patch_gmail_packages_core.py
+          python3 .github/patch_gmail_packages_methods.py
+          python3 .github/patch_gmail_packages_ui.py
+          python3 .github/patch_gmail_purchases_core.py
+          python3 .github/patch_gmail_purchases_methods.py
+          python3 .github/patch_gmail_purchases_ui.py
 
       - name: Get dependencies
         working-directory: app
@@ -60,11 +69,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Rename APK
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v2.4.1.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v2.5.0.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Paqueteria-v2.4.1-APK
-          path: Paqueteria-v2.4.1.apk
+          name: Paqueteria-v2.5.0-APK
+          path: Paqueteria-v2.5.0.apk
           retention-days: 30
