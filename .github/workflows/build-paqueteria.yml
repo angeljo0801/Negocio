@@ -51,6 +51,7 @@ jobs:
           python3 .github/patch_gmail_purchases_core.py
           python3 .github/patch_gmail_purchases_methods.py
           python3 .github/patch_gmail_purchases_ui.py
+          python3 .github/patch_gmail_final_fix.py
 
       - name: Get dependencies
         working-directory: app
