@@ -8,6 +8,7 @@ on:
       - ".github/workflows/build-paqueteria.yml"
       - ".github/patch_paqueteria.py"
       - ".github/patch_gmail_*.py"
+      - ".github/patch_paqueteria_migration_signing.py"
   workflow_dispatch:
 
 permissions:
@@ -42,7 +43,17 @@ jobs:
           rsvg-convert -w 1024 -h 1024 paqueteria/assets/icon.svg -o app/assets/icon.png
 
       - name: Patch source and Android
+        env:
+          FINANZAS_KEYSTORE_B64: ${{ secrets.FINANZAS_KEYSTORE_B64 }}
+          FINANZAS_KEYSTORE_PASSWORD: ${{ secrets.FINANZAS_KEYSTORE_PASSWORD }}
+          FINANZAS_KEY_ALIAS: ${{ secrets.FINANZAS_KEY_ALIAS }}
+          FINANZAS_KEY_PASSWORD: ${{ secrets.FINANZAS_KEY_PASSWORD }}
         run: |
+          if [ -z "$FINANZAS_KEYSTORE_B64" ] || [ -z "$FINANZAS_KEYSTORE_PASSWORD" ] || [ -z "$FINANZAS_KEY_ALIAS" ] || [ -z "$FINANZAS_KEY_PASSWORD" ]; then
+            echo "Missing stable signing secrets; refusing to create another temporary-signed Paqueteria APK."
+            exit 1
+          fi
+          printf '%s' "$FINANZAS_KEYSTORE_B64" | base64 --decode > app/android/app/paqueteria-release.jks
           python3 .github/patch_paqueteria.py
           python3 .github/patch_gmail_main.py
           python3 .github/patch_gmail_packages_core.py
@@ -53,6 +64,7 @@ jobs:
           python3 .github/patch_gmail_purchases_ui.py
           python3 .github/patch_gmail_background.py
           python3 .github/patch_gmail_final_fix.py
+          python3 .github/patch_paqueteria_migration_signing.py
 
       - name: Get dependencies
         working-directory: app
@@ -71,11 +83,11 @@ jobs:
         run: flutter build apk --release
 
       - name: Rename APK
-        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v2.5.0.apk
+        run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v2.5.1-stable.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Paqueteria-v2.5.0-APK
-          path: Paqueteria-v2.5.0.apk
+          name: Paqueteria-v2.5.1-Stable-APK
+          path: Paqueteria-v2.5.1-stable.apk
           retention-days: 30
