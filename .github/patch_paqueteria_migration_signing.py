@@ -16,19 +16,19 @@ if anchor in s and "Restaurar datos" not in s:
     )
 main.write_text(s)
 
-# Stable Android identity and release signing. Reuse the stable signing key that
-# is already stored as repository secrets for Finanzas; never commit key bytes.
+# Stable Android identity and release signing. The signing material is loaded
+# by GitHub Actions from an OIDC-protected vault on the private Railway volume.
 gradle = Path('app/android/app/build.gradle.kts')
 g = gradle.read_text()
 g = re.sub(r'namespace\s*=\s*"[^"]+"', 'namespace = "com.angelapps.paqueteria"', g, count=1)
 g = re.sub(r'applicationId\s*=\s*"[^"]+"', 'applicationId = "com.angelapps.paqueteria"', g, count=1)
 
-key_alias = os.environ.get('FINANZAS_KEY_ALIAS', '').strip()
-store_password = os.environ.get('FINANZAS_KEYSTORE_PASSWORD', '').strip()
-key_password = os.environ.get('FINANZAS_KEY_PASSWORD', '').strip()
-keystore = Path('app/android/app/paqueteria-release.jks')
+key_alias = os.environ.get('PAQUETERIA_KEY_ALIAS', '').strip()
+store_password = os.environ.get('PAQUETERIA_KEYSTORE_PASSWORD', '').strip()
+key_password = os.environ.get('PAQUETERIA_KEY_PASSWORD', '').strip() or store_password
+keystore = Path('app/android/app/paqueteria-release.p12')
 if not (keystore.exists() and key_alias and store_password and key_password):
-    raise SystemExit('Faltan los secrets de firma estable FINANZAS_*; se cancela el build para no generar otra APK con firma temporal.')
+    raise SystemExit('Falta la firma permanente de Paquetería; se cancela el build para no generar una APK con firma temporal.')
 
 def esc(v: str) -> str:
     return v.replace('\\', '\\\\').replace('"', '\\"')
@@ -37,7 +37,7 @@ signing = '''    signingConfigs {
         create("paqueteriaRelease") {
             keyAlias = "''' + esc(key_alias) + '''"
             keyPassword = "''' + esc(key_password) + '''"
-            storeFile = file("paqueteria-release.jks")
+            storeFile = file("paqueteria-release.p12")
             storePassword = "''' + esc(store_password) + '''"
         }
     }
