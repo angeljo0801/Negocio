@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   build:
@@ -42,18 +43,83 @@ jobs:
           mkdir -p app/assets
           rsvg-convert -w 1024 -h 1024 paqueteria/assets/icon.svg -o app/assets/icon.png
 
-      - name: Patch source and Android
-        env:
-          FINANZAS_KEYSTORE_B64: ${{ secrets.FINANZAS_KEYSTORE_B64 }}
-          FINANZAS_KEYSTORE_PASSWORD: ${{ secrets.FINANZAS_KEYSTORE_PASSWORD }}
-          FINANZAS_KEY_ALIAS: ${{ secrets.FINANZAS_KEY_ALIAS }}
-          FINANZAS_KEY_PASSWORD: ${{ secrets.FINANZAS_KEY_PASSWORD }}
+      - name: Load permanent Paqueteria signing key
+        shell: bash
         run: |
-          if [ -z "$FINANZAS_KEYSTORE_B64" ] || [ -z "$FINANZAS_KEYSTORE_PASSWORD" ] || [ -z "$FINANZAS_KEY_ALIAS" ] || [ -z "$FINANZAS_KEY_PASSWORD" ]; then
-            echo "Missing stable signing secrets; refusing to create another temporary-signed Paqueteria APK."
+          set -euo pipefail
+          VAULT_URL="https://wasbot-backend-production.up.railway.app/api/ci/paqueteria-signing"
+
+          TOKEN_RESPONSE="$(curl -fsSL \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=paqueteria-signing")"
+          OIDC_TOKEN="$(printf '%s' "$TOKEN_RESPONSE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+
+          HTTP_CODE="$(curl -sS -o /tmp/paqueteria-signing.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${OIDC_TOKEN}" \
+            "$VAULT_URL")"
+
+          if [ "$HTTP_CODE" = "404" ]; then
+            SIGNING_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(40))')"
+            export SIGNING_PASSWORD
+            keytool -genkeypair -noprompt \
+              -storetype PKCS12 \
+              -keystore /tmp/paqueteria-release.p12 \
+              -storepass "$SIGNING_PASSWORD" \
+              -keypass "$SIGNING_PASSWORD" \
+              -alias paqueteria \
+              -keyalg RSA \
+              -keysize 3072 \
+              -validity 36500 \
+              -dname "CN=Paqueteria, OU=AlasCargo, O=AlasCargo, L=Miami, ST=Florida, C=US"
+
+            python3 - <<'PY' > /tmp/paqueteria-signing-upload.json
+          import base64, json, os
+          from pathlib import Path
+          print(json.dumps({
+              "keystoreB64": base64.b64encode(Path('/tmp/paqueteria-release.p12').read_bytes()).decode('ascii'),
+              "password": os.environ['SIGNING_PASSWORD'],
+              "alias": "paqueteria",
+              "storeType": "PKCS12",
+          }))
+          PY
+
+            UPLOAD_CODE="$(curl -sS -o /tmp/paqueteria-signing-upload-response.json -w '%{http_code}' \
+              -X POST \
+              -H "Authorization: Bearer ${OIDC_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data-binary @/tmp/paqueteria-signing-upload.json \
+              "$VAULT_URL")"
+            if [ "$UPLOAD_CODE" != "200" ] && [ "$UPLOAD_CODE" != "409" ]; then
+              cat /tmp/paqueteria-signing-upload-response.json
+              exit 1
+            fi
+
+            HTTP_CODE="$(curl -sS -o /tmp/paqueteria-signing.json -w '%{http_code}' \
+              -H "Authorization: Bearer ${OIDC_TOKEN}" \
+              "$VAULT_URL")"
+          fi
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            cat /tmp/paqueteria-signing.json
             exit 1
           fi
-          printf '%s' "$FINANZAS_KEYSTORE_B64" | base64 --decode > app/android/app/paqueteria-release.jks
+
+          python3 - <<'PY'
+          import base64, json, os
+          from pathlib import Path
+          data = json.loads(Path('/tmp/paqueteria-signing.json').read_text())
+          Path('app/android/app/paqueteria-release.p12').write_bytes(base64.b64decode(data['keystoreB64']))
+          password = str(data['password'])
+          alias = str(data['alias'])
+          print(f'::add-mask::{password}')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write(f'PAQUETERIA_KEYSTORE_PASSWORD={password}\n')
+              env.write(f'PAQUETERIA_KEY_PASSWORD={password}\n')
+              env.write(f'PAQUETERIA_KEY_ALIAS={alias}\n')
+          PY
+
+      - name: Patch source and Android
+        run: |
           python3 .github/patch_paqueteria.py
           python3 .github/patch_gmail_main.py
           python3 .github/patch_gmail_packages_core.py
@@ -81,6 +147,13 @@ jobs:
       - name: Build release APK
         working-directory: app
         run: flutter build apk --release
+
+      - name: Verify release signing
+        run: |
+          keytool -list -v \
+            -keystore app/android/app/paqueteria-release.p12 \
+            -storepass "$PAQUETERIA_KEYSTORE_PASSWORD" \
+            -alias "$PAQUETERIA_KEY_ALIAS" | grep -E 'SHA256:|Alias name:'
 
       - name: Rename APK
         run: cp app/build/app/outputs/flutter-apk/app-release.apk Paqueteria-v2.5.1-stable.apk
