@@ -1,0 +1,54 @@
+name: Build Paqueteria Migrator APK
+
+on:
+  push:
+    branches: ["paqueteria-v1"]
+    paths:
+      - "paqueteria_migrator/**"
+      - ".github/patch_paqueteria_migrator.py"
+      - ".github/workflows/build-paqueteria-migrator.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create Android scaffold
+        run: |
+          flutter create --platforms=android --org com.angelapps.migrator --project-name paqueteria_migrator migrator
+          rm -rf migrator/lib migrator/test
+          cp -R paqueteria_migrator/lib migrator/lib
+          cp paqueteria_migrator/pubspec.yaml migrator/pubspec.yaml
+          python3 .github/patch_paqueteria_migrator.py
+
+      - name: Get dependencies
+        working-directory: migrator
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: migrator
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib
+
+      - name: Build APK
+        working-directory: migrator
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: cp migrator/build/app/outputs/flutter-apk/app-release.apk Paqueteria-Migrador-v1.0.0.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Paqueteria-Migrador-v1.0.0-APK
+          path: Paqueteria-Migrador-v1.0.0.apk
+          retention-days: 30
