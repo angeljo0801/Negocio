@@ -47,7 +47,7 @@ old = """          Card(
             child: ListTile(
               title: Text('${e['name']}'),
               subtitle: Text('${clientName(clients, '${e['clientId']}')} · x${number(e['qty']).toStringAsFixed(number(e['qty']) % 1 == 0 ? 0 : 2)}'),
-              trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+              trailing: Wrap(children: [
                 Text(money(number(e['price']) * number(e['qty'] ?? 1))),"""
 new = """          Card(
             child: ListTile(
@@ -57,7 +57,7 @@ new = """          Card(
               ),
               title: Text('${e['name']}'),
               subtitle: Text('${clientName(clients, '${e['clientId']}')} · x${number(e['qty']).toStringAsFixed(number(e['qty']) % 1 == 0 ? 0 : 2)} · ${money(number(e['price']))} c/u'),
-              trailing: Wrap(mainAxisSize: MainAxisSize.min, children: [
+              trailing: Wrap(children: [
                 Text(money(number(e['price']) * number(e['qty'] ?? 1))),"""
 if old not in s:
     raise SystemExit('item card anchor missing')
